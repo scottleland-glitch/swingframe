@@ -1,7 +1,10 @@
 import type { ShotData, ShotField } from '../types';
 import { emptyShot } from './flight';
 
-const LABELS: { field: ShotField | 'backSpin'; re: RegExp }[] = [
+/** Labels that are recognized so they are not mistaken for one of the five flight inputs. */
+type IgnoredLabel = 'sideSpin' | 'clubPath' | 'faceToTarget' | 'faceToPath' | 'carry' | 'apex' | 'curve';
+
+const LABELS: { field: ShotField | 'backSpin' | IgnoredLabel; re: RegExp }[] = [
   { field: 'ballSpeed', re: /ball\s*spe{1,2}d/i },
   { field: 'vla', re: /\bvla\b|launch\s*ang(?:le)?|vertical\s*launch/i },
   { field: 'hla', re: /\bhla\b|launch\s*dir(?:ection)?|azimuth|side\s*ang(?:le)?|horizontal\s*launch/i },
@@ -17,15 +20,9 @@ const LABELS: { field: ShotField | 'backSpin'; re: RegExp }[] = [
   { field: 'curve', re: /\bcurve\b|\bside\b/i },
 ];
 
-const DIRECTIONAL = new Set<ShotField | 'backSpin'>([
-  'hla',
-  'spinAxis',
-  'sideSpin',
-  'curve',
-  'clubPath',
-  'faceToTarget',
-  'faceToPath',
-]);
+const FLIGHT_FIELDS = new Set<ShotField>(['ballSpeed', 'vla', 'hla', 'spin', 'spinAxis']);
+
+const DIRECTIONAL = new Set<ShotField | 'backSpin' | IgnoredLabel>(['hla', 'spinAxis']);
 
 function normalizeOcr(text: string): string {
   return text
@@ -39,8 +36,8 @@ function normalizeOcr(text: string): string {
     .replace(/(?<!\w)[lI](?=\d)/g, '1');
 }
 
-function matchLabel(line: string): { field: ShotField | 'backSpin'; end: number; length: number } | null {
-  let best: { field: ShotField | 'backSpin'; end: number; length: number } | null = null;
+function matchLabel(line: string): { field: ShotField | 'backSpin' | IgnoredLabel; end: number; length: number } | null {
+  let best: { field: ShotField | 'backSpin' | IgnoredLabel; end: number; length: number } | null = null;
   for (const label of LABELS) {
     const found = label.re.exec(line);
     if (!found) continue;
@@ -73,12 +70,7 @@ function plausible(field: ShotField | 'backSpin', value: number): number | null 
     return angle >= -15 && angle <= 70 ? angle : null;
   }
   if (field === 'hla' || field === 'spinAxis') return abs <= 60 ? value : null;
-  if (field === 'clubPath' || field === 'faceToTarget' || field === 'faceToPath') return abs <= 45 ? value : null;
   if (field === 'spin' || field === 'backSpin') return abs >= 50 && abs <= 16000 ? abs : null;
-  if (field === 'sideSpin') return abs <= 12000 ? value : null;
-  if (field === 'carry') return abs >= 5 && abs <= 450 ? abs : null;
-  if (field === 'apex') return abs >= 1 && abs <= 250 ? abs : null;
-  if (field === 'curve') return abs <= 120 ? value : null;
   return null;
 }
 
@@ -88,10 +80,11 @@ function readValue(field: ShotField | 'backSpin', raw: number): number | null {
 }
 
 /**
- * Pull Foresight-style labels out of OCR text.
- * Club path, face to target, and face to path are read when they are on the screen.
- * Launch direction stays its own field. L is left, R is right.
- * Does not invent carry, apex, or curve. Club speed, smash, and attack angle are ignored.
+ * Pull the five flight inputs out of a Foresight screenshot.
+ * Ball Speed, Launch Angle (VLA), Total Spin, Spin Axis, and Launch Direction (HLA).
+ * Back spin fills total spin only when total spin is missing. It does not set the spin axis.
+ * Club path, face angles, side spin, carry, apex, and curve are ignored, as are club speed, smash, and attack angle.
+ * L is left, R is right.
  */
 export function parseForesightText(text: string): ShotData {
   const shot = emptyShot();
@@ -119,20 +112,13 @@ export function parseForesightText(text: string): ShotData {
       backSpin = value;
       continue;
     }
+    if (!FLIGHT_FIELDS.has(label.field)) continue;
     shot[label.field] = value;
     shot.sources[label.field] = 'screen';
   }
 
   if (shot.spin == null && backSpin != null) {
-    if (shot.sideSpin != null) {
-      shot.spin = Math.round(Math.hypot(backSpin, shot.sideSpin));
-      if (shot.spinAxis == null) {
-        shot.spinAxis = Math.round((Math.atan2(shot.sideSpin, backSpin) * 180) / Math.PI * 10) / 10;
-        shot.sources.spinAxis = 'screen';
-      }
-    } else {
-      shot.spin = backSpin;
-    }
+    shot.spin = backSpin;
     shot.sources.spin = 'screen';
   }
   return shot;

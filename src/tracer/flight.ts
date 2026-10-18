@@ -22,10 +22,9 @@ const CL_MAX = 0.25;
 const STEP = 0.005;
 /** Spin eases off over the flight so hang time stays in a real range. */
 const SPIN_TAU = 16;
-/** Start line is mostly face angle, inside the usual 75–85% share. */
-const FACE_TO_HLA = 0.8;
 
-const MODEL_FIELDS: ShotField[] = ['hla', 'spinAxis', 'sideSpin', 'carry', 'apex', 'curve'];
+/** Calculated results only. Launch direction and spin axis are never invented from club numbers. */
+const MODEL_FIELDS: ShotField[] = ['carry', 'apex', 'curve'];
 
 export interface FlightSample {
   t: number;
@@ -107,12 +106,7 @@ function accel(s: V6, wx: number, wy: number, wz: number): V6 {
 }
 
 function axisDegrees(shot: ShotData): number {
-  if (shot.spinAxis != null) return shot.spinAxis;
-  if (shot.spin != null && shot.sideSpin != null && Math.abs(shot.spin) > 1) {
-    const ratio = Math.max(-1, Math.min(1, shot.sideSpin / shot.spin));
-    return (Math.asin(ratio) * 180) / Math.PI;
-  }
-  return 0;
+  return shot.spinAxis ?? 0;
 }
 
 /** Integrate until the ball returns to the ground. Null when speed, launch, or spin is missing. */
@@ -197,33 +191,15 @@ function clearModel(shot: ShotData, keep: ShotField | null) {
   }
 }
 
-/** Fill blank launch direction, spin axis, carry, apex, and curve. Measured numbers stay. */
+/**
+ * Fill blank carry, apex, and curve from the flight.
+ * The flight itself uses only ball speed, launch angle, total spin, spin axis, and launch direction.
+ * A stored launch direction or spin axis is kept, including on older swings. Club path, face angles, and side spin are ignored.
+ */
 export function completeShot(input: ShotData): ShotData {
   const shot: ShotData = { ...input, sources: { ...input.sources } };
-  if (shot.hla == null && shot.faceToTarget != null) {
-    shot.hla = roundTo(shot.faceToTarget * FACE_TO_HLA, 1);
-    shot.sources.hla = 'model';
-  }
-  if (shot.spinAxis == null && shot.spin != null && shot.sideSpin != null && Math.abs(shot.spin) > 1) {
-    const ratio = Math.max(-1, Math.min(1, shot.sideSpin / shot.spin));
-    shot.spinAxis = roundTo((Math.asin(ratio) * 180) / Math.PI, 1);
-    shot.sources.spinAxis = 'model';
-  } else if (shot.spinAxis == null && shot.faceToPath != null) {
-    shot.spinAxis = roundTo(shot.faceToPath, 1);
-    shot.sources.spinAxis = 'model';
-  }
-  if (shot.sideSpin == null && shot.spin != null && shot.spinAxis != null) {
-    shot.sideSpin = roundTo(shot.spin * Math.sin((shot.spinAxis * Math.PI) / 180), 0);
-    shot.sources.sideSpin = 'model';
-  }
   const flight = simulateShot(shot);
-  if (!flight) {
-    if (shot.curve == null && shot.faceToPath != null && shot.carry != null) {
-      shot.curve = roundTo(shot.faceToPath * (shot.carry / 75), 1);
-      shot.sources.curve = 'model';
-    }
-    return shot;
-  }
+  if (!flight) return shot;
   if (shot.carry == null) {
     shot.carry = roundTo(flight.carryYd, 1);
     shot.sources.carry = 'model';

@@ -84,44 +84,67 @@ describe('ball flight', () => {
     expect(again.sources.apex).toBe('typed');
   });
 
-  it('derives launch direction from face to target and curve from face to path', () => {
-    const fromFace = completeShot({
-      ...emptyShot(),
-      faceToTarget: -2.5,
-      sources: { faceToTarget: 'typed' },
-    });
-    expect(fromFace.hla).toBeCloseTo(-2);
-    expect(fromFace.sources.hla).toBe('model');
-
-    const measured = completeShot({
-      ...emptyShot(),
-      hla: 1.2,
-      faceToTarget: 5,
-      sources: { hla: 'screen', faceToTarget: 'screen' },
-    });
-    expect(measured.hla).toBe(1.2);
-
-    const curved = completeShot({
+  it('flies from the five inputs and keeps a stored launch direction and spin axis', () => {
+    const stored = completeShot({
       ...emptyShot(),
       ballSpeed: 150,
       vla: 14,
       spin: 6000,
+      hla: -3,
+      spinAxis: 4,
+      faceToTarget: 5,
       faceToPath: -8,
-      sources: { ballSpeed: 'typed', vla: 'typed', spin: 'typed', faceToPath: 'typed' },
+      sideSpin: 400,
+      clubPath: 2,
+      carry: 250,
+      sources: {
+        ballSpeed: 'typed',
+        vla: 'typed',
+        spin: 'typed',
+        hla: 'screen',
+        spinAxis: 'screen',
+        faceToTarget: 'screen',
+        faceToPath: 'screen',
+        sideSpin: 'screen',
+        clubPath: 'screen',
+        carry: 'typed',
+      },
     });
-    expect(curved.spinAxis).toBeCloseTo(-8);
-    expect(curved.curve).toBeLessThan(-2);
+    expect(stored.hla).toBe(-3);
+    expect(stored.spinAxis).toBe(4);
+    expect(stored.carry).toBe(250);
+    const clean = simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 14, spin: 6000, hla: -3, spinAxis: 4 });
+    const withExtras = simulateShot(stored);
+    expect(withExtras!.curveYd).toBeCloseTo(clean!.curveYd, 5);
+    expect(withExtras!.carryYd).toBeCloseTo(clean!.carryYd, 5);
 
-    const preferred = completeShot({
+    const ignored = completeShot({
       ...emptyShot(),
       ballSpeed: 150,
-      vla: 12,
-      spin: 3000,
+      vla: 14,
+      spin: 6000,
+      faceToTarget: -2.5,
+      faceToPath: -8,
       sideSpin: 400,
-      faceToPath: -5,
-      sources: { ballSpeed: 'typed', vla: 'typed', spin: 'typed', sideSpin: 'typed', faceToPath: 'typed' },
+      sources: {
+        ballSpeed: 'typed',
+        vla: 'typed',
+        spin: 'typed',
+        faceToTarget: 'typed',
+        faceToPath: 'typed',
+        sideSpin: 'typed',
+      },
     });
-    expect(preferred.spinAxis).toBeGreaterThan(0);
+    expect(ignored.hla).toBeNull();
+    expect(ignored.spinAxis).toBeNull();
+    expect(ignored.sideSpin).toBe(400);
+    const straight = simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 14, spin: 6000 });
+    expect(simulateShot(ignored)!.curveYd).toBeCloseTo(straight!.curveYd, 5);
+
+    const kept = editShot(stored, 'ballSpeed', 155);
+    expect(kept.hla).toBe(-3);
+    expect(kept.spinAxis).toBe(4);
+    expect(kept.faceToTarget).toBe(5);
 
     const rough = completeShot({
       ...emptyShot(),
@@ -129,13 +152,9 @@ describe('ball flight', () => {
       carry: 225,
       sources: { faceToPath: 'typed', carry: 'typed' },
     });
-    expect(rough.curve).toBeCloseTo(9);
-    expect(rough.sources.curve).toBe('model');
-
-    const edited = editShot(fromFace, 'faceToTarget', 4);
-    expect(edited.hla).toBeCloseTo(3.2);
-    const typed = editShot(fromFace, 'hla', 0.4);
-    expect(editShot(typed, 'faceToTarget', 5).hla).toBeCloseTo(0.4);
+    expect(rough.hla).toBeNull();
+    expect(rough.spinAxis).toBeNull();
+    expect(rough.curve).toBeNull();
   });
 });
 
@@ -160,9 +179,12 @@ describe('foresight text', () => {
     expect(shot.hla).toBeCloseTo(2.1);
     expect(shot.spin).toBeCloseTo(2650);
     expect(shot.spinAxis).toBeCloseTo(4.2);
-    expect(shot.carry).toBeCloseTo(276);
+    expect(shot.carry).toBeNull();
     expect(shot.apex).toBeNull();
-    expect(shot.sources.carry).toBe('screen');
+    expect(shot.curve).toBeNull();
+    expect(shot.sources.carry).toBeUndefined();
+    expect(shot.sources.ballSpeed).toBe('screen');
+    expect(shot.sources.hla).toBe('screen');
   });
 
   it('handles L suffixes, OCR noise, and a missing carry', () => {
@@ -181,37 +203,54 @@ describe('foresight text', () => {
     expect(shot.vla).toBeCloseTo(11.2);
     expect(shot.hla).toBeCloseTo(-1.4);
     expect(shot.spin).toBe(2480);
-    expect(shot.sideSpin).toBe(320);
-    expect(shot.apex).toBe(96);
+    expect(shot.sideSpin).toBeNull();
+    expect(shot.apex).toBeNull();
+    expect(shot.spinAxis).toBeNull();
     expect(shot.carry).toBeNull();
     const filled = mergeScreen(emptyShot(), shot);
     expect(filled.carry).not.toBeNull();
     expect(filled.sources.carry).toBe('model');
     expect(filled.sources.ballSpeed).toBe('screen');
-    expect(filled.spinAxis).not.toBeNull();
-    expect(filled.spinAxis!).toBeGreaterThan(0);
+    expect(filled.hla).toBeCloseTo(-1.4);
+    expect(filled.spinAxis).toBeNull();
   });
 
-  it('builds total spin from back spin and side spin', () => {
+  it('uses back spin as total spin and does not invent a spin axis', () => {
     const shot = parseForesightText('Back Spin 5200\nSide Spin 400 L\nCurve 6.5 L');
-    expect(shot.spin).toBe(Math.round(Math.hypot(5200, 400)));
-    expect(shot.spinAxis).toBeLessThan(0);
-    expect(shot.curve).toBeCloseTo(-6.5);
+    expect(shot.spin).toBe(5200);
+    expect(shot.spinAxis).toBeNull();
+    expect(shot.sideSpin).toBeNull();
+    expect(shot.curve).toBeNull();
   });
 
-  it('reads club path and face angles without mixing them into launch direction', () => {
+  it('fills only the five flight inputs from a screen that also shows club data', () => {
     const shot = parseForesightText(`
+      Ball Speed 152.4
+      Launch Angle 13.1
       Launch Direction 1.2 L
+      Total Spin 6420
+      Spin Axis 3.5 R
       Club Path 3.4 R
       Face to Target 0.8 R
       Face to Path 4.2 L
+      Side Spin 390
+      Carry 241
+      Apex 88
+      Curve 6.5 L
       Attack Angle -2.4
     `);
+    expect(shot.ballSpeed).toBeCloseTo(152.4);
+    expect(shot.vla).toBeCloseTo(13.1);
     expect(shot.hla).toBeCloseTo(-1.2);
-    expect(shot.clubPath).toBeCloseTo(3.4);
-    expect(shot.faceToTarget).toBeCloseTo(0.8);
-    expect(shot.faceToPath).toBeCloseTo(-4.2);
-    expect(shot.vla).toBeNull();
+    expect(shot.spin).toBe(6420);
+    expect(shot.spinAxis).toBeCloseTo(3.5);
+    expect(shot.clubPath).toBeNull();
+    expect(shot.faceToTarget).toBeNull();
+    expect(shot.faceToPath).toBeNull();
+    expect(shot.sideSpin).toBeNull();
+    expect(shot.carry).toBeNull();
+    expect(shot.apex).toBeNull();
+    expect(shot.curve).toBeNull();
   });
 });
 

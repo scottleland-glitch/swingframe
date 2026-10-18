@@ -8,16 +8,9 @@ import { withSide } from '../tracer/sign';
 const FIELDS: { key: ShotField; label: string; unit: string; step: string; signed?: boolean }[] = [
   { key: 'ballSpeed', label: 'Ball speed', unit: 'mph', step: '0.1' },
   { key: 'vla', label: 'Launch angle', unit: '°', step: '0.1' },
-  { key: 'hla', label: 'Launch direction', unit: '°', step: '0.1', signed: true },
-  { key: 'spin', label: 'Spin', unit: 'rpm', step: '1' },
+  { key: 'spin', label: 'Total spin', unit: 'rpm', step: '1' },
   { key: 'spinAxis', label: 'Spin axis', unit: '°', step: '0.1', signed: true },
-  { key: 'sideSpin', label: 'Side spin', unit: 'rpm', step: '1', signed: true },
-  { key: 'clubPath', label: 'Club path', unit: '°', step: '0.1', signed: true },
-  { key: 'faceToTarget', label: 'Face to target', unit: '°', step: '0.1', signed: true },
-  { key: 'faceToPath', label: 'Face to path', unit: '°', step: '0.1', signed: true },
-  { key: 'carry', label: 'Carry', unit: 'yds', step: '0.1' },
-  { key: 'apex', label: 'Apex', unit: 'ft', step: '0.1' },
-  { key: 'curve', label: 'Curve', unit: 'yds', step: '0.1', signed: true },
+  { key: 'hla', label: 'Launch Direction (HLA)', unit: '°', step: '0.1', signed: true },
 ];
 
 const SOURCE_LABEL = { screen: 'screenshot', typed: 'typed', model: 'calculated' } as const;
@@ -28,6 +21,11 @@ function feet(meters: number): number {
 
 function yards(meters: number): number {
   return meters / 0.9144;
+}
+
+function flightSummary(carryYd: number, apexFt: number, curveYd: number): string {
+  const side = curveYd < -0.05 ? ' L' : curveYd > 0.05 ? ' R' : '';
+  return `Carry ${carryYd.toFixed(0)} yds · Apex ${apexFt.toFixed(0)} ft · Curve ${Math.abs(curveYd).toFixed(1)}${side} yds`;
 }
 
 export function TracerPanel({
@@ -232,9 +230,15 @@ export function TracerPanel({
           );
         })}
       </div>
+      {flight && (
+        <p className="tracer-results" data-testid="tracer-results">
+          {flightSummary(flight.carryYd, flight.apexFt, flight.curveYd)}
+        </p>
+      )}
       <p className="panel-hint">
-        L and R are degrees left or right of the aim line. Launch direction is the start line. Spin axis curves the ball off that line, and the aim point is not the landing. If launch direction is blank, it is about 80% of face to target. If spin axis is blank, it follows face to path.
+        L and R are degrees left or right of the aim line. Launch Direction (HLA) is the start line. Spin axis curves the ball off that line, and the aim point is not the landing.
       </p>
+      </fieldset>
       <div className="panel-actions">
         <button type="button" className="btn" data-testid="tracer-show-aim" aria-pressed={showAim} onClick={onToggleAim}>
           {showAim ? 'Hide aim point' : 'Show aim point'}
@@ -255,6 +259,7 @@ export function TracerPanel({
           : 'Lock freezes the tracer so nothing moves by accident.'}{' '}
         Show aim point draws the ball, the aim point, and the white aim line. They stay hidden during playback unless this is on.
       </p>
+      <fieldset className="tracer-lock" disabled={locked}>
       <div className="panel-actions">
         <button type="button" className="btn" data-testid="tracer-ball" onClick={() => onCalibrate('ball')}>
           {tracer.ball ? 'Move ball' : 'Tap the ball'}

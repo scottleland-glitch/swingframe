@@ -877,6 +877,13 @@ textarea { resize: vertical; }
   font-weight: 600;
 }
 .panel-hint { margin: 0 0 8px; text-align: center; color: rgba(255, 255, 255, 0.72); font-size: 13px; }
+.tracer-results {
+  margin: 0 0 8px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
 .tool-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
