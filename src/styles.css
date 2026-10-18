@@ -321,8 +321,10 @@ input, textarea {
 }
 textarea { resize: vertical; }
 .preview {
+  display: block;
   width: 100%;
   max-height: 28vh;
+  object-fit: contain;
   border-radius: 16px;
   background: #000;
 }
@@ -370,20 +372,6 @@ textarea { resize: vertical; }
 .fit video, .fit canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .fit video { object-fit: fill; background: #000; }
 .fit canvas { pointer-events: none; }
-.inline-video {
-  pointer-events: none !important;
-}
-.inline-video::-webkit-media-controls,
-.inline-video::-webkit-media-controls-enclosure,
-.inline-video::-webkit-media-controls-panel,
-.inline-video::-webkit-media-controls-start-playback-button,
-.inline-video::-webkit-media-controls-overlay-play-button,
-.inline-video::-webkit-media-controls-play-button {
-  display: none !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-  -webkit-appearance: none;
-}
 .overlay-video { opacity: 0.48; object-fit: contain; }
 .gesture-chip, .stage-error {
   position: absolute;

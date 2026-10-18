@@ -1,50 +1,54 @@
 type WebKitVideo = HTMLVideoElement & {
-  webkitEnterFullscreen?: () => void;
   webkitExitFullscreen?: () => void;
-  webkitDisplayingFullscreen?: boolean;
 };
 
 /**
- * iOS Safari, including a Home Screen web app, sends a video into the system
- * player unless playsinline and webkit-playsinline are real attributes before
- * src is assigned. Call this, then set src.
+ * Attributes iOS needs in order to keep a video on the page.
+ * Does not replace fullscreen methods or change pointer-events.
  */
-export function lockInlinePlayback(video: HTMLVideoElement): void {
-  const node = video as WebKitVideo;
-  node.playsInline = true;
-  node.setAttribute('playsinline', 'true');
-  node.setAttribute('webkit-playsinline', 'true');
-  node.controls = false;
-  node.removeAttribute('controls');
-  node.autoplay = false;
-  node.disablePictureInPicture = true;
-  node.setAttribute('disableremoteplayback', 'true');
-  node.setAttribute('x-webkit-airplay', 'deny');
-  node.setAttribute('x5-playsinline', 'true');
-  node.setAttribute('x5-video-player-type', 'h5');
-  node.setAttribute('x5-video-player-fullscreen', 'false');
-  node.style.pointerEvents = 'none';
-
-  const refuseFullscreen = () => undefined;
-  try {
-    node.webkitEnterFullscreen = refuseFullscreen;
-  } catch {
-    /* Home Screen WebKit may not allow replacing the native method. */
-  }
-  try {
-    node.requestFullscreen = () => Promise.reject(new DOMException('Playback stays inline.', 'NotAllowedError'));
-  } catch {
-    /* Same as above. playsinline still keeps playback on the page. */
-  }
-  node.dataset.inlineLocked = '1';
+export function markInline(video: HTMLVideoElement): void {
+  video.playsInline = true;
+  video.setAttribute('playsinline', 'true');
+  video.setAttribute('webkit-playsinline', 'true');
+  video.controls = false;
+  video.removeAttribute('controls');
+  video.preload = 'auto';
+  video.autoplay = false;
 }
 
-export function exitNativeFullscreen(video: HTMLVideoElement): void {
+/** Set the source only after markInline, then ask WebKit to load. */
+export function loadInlineSource(video: HTMLVideoElement, url: string): void {
+  markInline(video);
+  video.src = url;
+  video.load();
+}
+
+/** If iOS opened the system player, leave it. Never calls enter-fullscreen. */
+export function exitIfNativeFullscreen(video: HTMLVideoElement): void {
   const node = video as WebKitVideo;
-  if (!node.webkitDisplayingFullscreen) return;
   try {
     node.webkitExitFullscreen?.();
   } catch {
-    /* Already back on the page. */
+    /* Not in the system player. */
   }
+}
+
+export function paintFirstFrame(video: HTMLVideoElement): void {
+  if (video.currentTime >= 0.001) return;
+  const duration = video.duration;
+  const target = Number.isFinite(duration) && duration > 0 ? Math.min(0.001, duration) : 0.001;
+  try {
+    video.currentTime = target;
+  } catch {
+    /* The file is not seekable yet. The first decoded frame still shows after load. */
+  }
+}
+
+export function mediaErrorMessage(video: HTMLVideoElement): string {
+  const code = video.error?.code;
+  if (code === 1) return 'Loading that video was interrupted.';
+  if (code === 2) return 'The video file could not be read from this phone.';
+  if (code === 3) return 'That video failed while decoding.';
+  if (code === 4) return 'This phone could not decode that video.';
+  return 'This phone could not show that video.';
 }

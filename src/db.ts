@@ -1,7 +1,15 @@
+import { requestPersistentStorage } from './platform';
 import type { SwingMeta } from './types';
 
 const DB_NAME = 'swingframe';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+
+/**
+ * iOS drops Blob and File values stored in IndexedDB after the Home Screen
+ * app is closed. Bytes plus a MIME type survive, and the Blob is rebuilt on read.
+ */
+type StoredBytes = { bytes: ArrayBuffer; type: string };
+type StoredSwing = Omit<SwingMeta, 'thumbnail'> & { thumbnail: StoredBytes | Blob | null };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 let chain: Promise<unknown> = Promise.resolve();
@@ -53,145 +61,273 @@ export function quotaMessage(): string {
   return 'This phone does not have enough free space for that video.';
 }
 
-function settle<T>(resolve: (value: T) => void, reject: (err: Error) => void) {
-  let done = false;
-  return {
-    ok(value: T) {
-      if (done) return;
-      done = true;
-      resolve(value);
-    },
-    fail(err: unknown) {
-      if (done) return;
-      done = true;
-      reject(err instanceof Error ? err : new Error('Storage error'));
-    },
-  };
+function storedBytes(value: unknown): { bytes: ArrayBuffer | ArrayBufferView; type: string } | null {
+  if (!value || typeof value !== 'object') return null;
+  const rec = value as { bytes?: unknown; type?: unknown };
+  if (!(rec.bytes instanceof ArrayBuffer) && !ArrayBuffer.isView(rec.bytes)) return null;
+  return { bytes: rec.bytes, type: typeof rec.type === 'string' ? rec.type : '' };
+}
+
+function isStoredBytes(value: unknown): value is StoredBytes {
+  return storedBytes(value) != null;
+}
+
+function plainBuffer(bytes: ArrayBuffer | ArrayBufferView): ArrayBuffer {
+  if (bytes instanceof ArrayBuffer) return bytes;
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(new Uint8Array(bytes.buffer as ArrayBuffer, bytes.byteOffset, bytes.byteLength));
+  return copy;
+}
+
+function asBlob(value: unknown, fallbackType: string): Blob | null {
+  try {
+    if (value instanceof Blob) return value.size > 0 ? value : null;
+    const stored = storedBytes(value);
+    if (stored && stored.bytes.byteLength > 0) {
+      return new Blob([plainBuffer(stored.bytes)], { type: stored.type || fallbackType });
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function toStoredBytes(blob: Blob, fallbackType: string): Promise<StoredBytes> {
+  const bytes = await blob.arrayBuffer();
+  return { bytes, type: blob.type || fallbackType };
+}
+
+function rehydrate(row: unknown): SwingMeta | null {
+  try {
+    if (!row || typeof row !== 'object' || typeof (row as { id?: unknown }).id !== 'string') return null;
+    const rec = row as StoredSwing;
+    return {
+      ...rec,
+      drawings: Array.isArray(rec.drawings) ? rec.drawings : [],
+      thumbnail: asBlob(rec.thumbnail, 'image/jpeg'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readStore<T>(store: IDBObjectStore, key?: IDBValidKey): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const req = key === undefined ? store.getAll() : store.get(key);
+    req.onsuccess = () => resolve(req.result as T);
+    req.onerror = () => reject(req.error ?? new Error('Could not read saved swings.'));
+  });
+}
+
+function txDone(tx: IDBTransaction, failure: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error(failure));
+    tx.onabort = () => reject(tx.error ?? new Error(failure));
+  });
+}
+
+function readAllKeyed(store: IDBObjectStore): Promise<{ key: IDBValidKey; value: unknown }[]> {
+  return new Promise((resolve, reject) => {
+    const rows: { key: IDBValidKey; value: unknown }[] = [];
+    const req = store.openCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) {
+        resolve(rows);
+        return;
+      }
+      rows.push({ key: cursor.key, value: cursor.value });
+      cursor.continue();
+    };
+    req.onerror = () => reject(req.error ?? new Error('Could not read saved swings.'));
+  });
+}
+
+/**
+ * Older builds stored Blob values. iOS drops those records when the Home
+ * Screen app closes, so rewrite any that are still readable into bytes.
+ */
+let bytesReady: Promise<void> | null = null;
+
+function ensureStoredBytes(): Promise<void> {
+  if (!bytesReady) {
+    bytesReady = rewriteBlobValues().catch(() => {
+      bytesReady = null;
+    });
+  }
+  return bytesReady;
+}
+
+async function rewriteBlobValues(): Promise<void> {
+  const db = await openDB();
+  const readTx = db.transaction(['swings', 'videos'], 'readonly');
+  const swings = await readAllKeyed(readTx.objectStore('swings'));
+  const videos = await readAllKeyed(readTx.objectStore('videos'));
+  await txDone(readTx, 'Could not read swings.');
+
+  const swingPuts: StoredSwing[] = [];
+  for (const row of swings) {
+    if (!row.value || typeof row.value !== 'object') continue;
+    const rec = row.value as StoredSwing;
+    if (!(rec.thumbnail instanceof Blob)) continue;
+    let thumbnail: StoredBytes | null = null;
+    if (rec.thumbnail.size > 0) {
+      try {
+        const stored = await toStoredBytes(rec.thumbnail, 'image/jpeg');
+        thumbnail = stored.bytes.byteLength > 0 ? stored : null;
+      } catch {
+        thumbnail = null;
+      }
+    }
+    swingPuts.push({ ...rec, thumbnail });
+  }
+
+  const videoPuts: { key: IDBValidKey; value: StoredBytes }[] = [];
+  for (const row of videos) {
+    if (!(row.value instanceof Blob) || row.value.size === 0) continue;
+    const stored = await toStoredBytes(row.value, row.value.type || 'video/mp4');
+    if (stored.bytes.byteLength === 0) continue;
+    videoPuts.push({ key: row.key, value: stored });
+  }
+
+  if (swingPuts.length === 0 && videoPuts.length === 0) return;
+  const writeTx = db.transaction(['swings', 'videos'], 'readwrite');
+  const swingStore = writeTx.objectStore('swings');
+  const videoStore = writeTx.objectStore('videos');
+  for (const rec of swingPuts) swingStore.put(rec);
+  for (const item of videoPuts) videoStore.put(item.value, item.key);
+  await txDone(writeTx, 'Could not keep saved swings on this phone.');
+}
+
+async function thumbnailBytes(
+  current: StoredSwing['thumbnail'],
+  incoming: Blob | null | undefined,
+): Promise<StoredBytes | null> {
+  if (incoming instanceof Blob && incoming.size > 0) {
+    try {
+      const stored = await toStoredBytes(incoming, 'image/jpeg');
+      if (stored.bytes.byteLength > 0) return stored;
+    } catch {
+      /* Keep the previous poster. */
+    }
+  }
+  if (isStoredBytes(current)) return current;
+  if (current instanceof Blob && current.size > 0) {
+    try {
+      const stored = await toStoredBytes(current, 'image/jpeg');
+      return stored.bytes.byteLength > 0 ? stored : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export function listSwings(): Promise<SwingMeta[]> {
-  return enqueue(
-    () =>
-      new Promise((resolve, reject) => {
-        const gate = settle(resolve, reject);
-        openDB()
-          .then((db) => {
-            const tx = db.transaction('swings', 'readonly');
-            const req = tx.objectStore('swings').getAll();
-            req.onsuccess = () => {
-              const rows = (req.result as SwingMeta[]).slice().sort((a, b) => {
-                if (a.date !== b.date) return a.date < b.date ? 1 : -1;
-                return b.createdAt - a.createdAt;
-              });
-              gate.ok(rows);
-            };
-            req.onerror = () => gate.fail(req.error ?? new Error('Could not read swings.'));
-            tx.onerror = () => gate.fail(tx.error ?? new Error('Could not read swings.'));
-          })
-          .catch(gate.fail);
-      }),
-  );
+  return enqueue(async () => {
+    await ensureStoredBytes();
+    const db = await openDB();
+    const tx = db.transaction('swings', 'readonly');
+    const rows = await readStore<unknown[]>(tx.objectStore('swings'));
+    await txDone(tx, 'Could not read swings.');
+    return rows
+      .map(rehydrate)
+      .filter((row): row is SwingMeta => row != null)
+      .sort((a, b) => {
+        if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+        return b.createdAt - a.createdAt;
+      });
+  });
 }
 
 export function getSwing(id: string): Promise<SwingMeta | null> {
-  return enqueue(
-    () =>
-      new Promise((resolve, reject) => {
-        const gate = settle(resolve, reject);
-        openDB()
-          .then((db) => {
-            const tx = db.transaction('swings', 'readonly');
-            const req = tx.objectStore('swings').get(id);
-            req.onsuccess = () => gate.ok((req.result as SwingMeta | undefined) ?? null);
-            req.onerror = () => gate.fail(req.error ?? new Error('Could not read that swing.'));
-          })
-          .catch(gate.fail);
-      }),
-  );
+  return enqueue(async () => {
+    await ensureStoredBytes();
+    const db = await openDB();
+    const tx = db.transaction('swings', 'readonly');
+    const row = await readStore<unknown>(tx.objectStore('swings'), id);
+    await txDone(tx, 'Could not read that swing.');
+    return rehydrate(row);
+  });
 }
 
 export function getVideo(id: string): Promise<Blob | null> {
-  return enqueue(
-    () =>
-      new Promise((resolve, reject) => {
-        const gate = settle(resolve, reject);
-        openDB()
-          .then((db) => {
-            const tx = db.transaction('videos', 'readonly');
-            const req = tx.objectStore('videos').get(id);
-            req.onsuccess = () => {
-              const result = req.result as Blob | undefined;
-              gate.ok(result ?? null);
-            };
-            req.onerror = () => gate.fail(req.error ?? new Error('Could not read that video.'));
-          })
-          .catch(gate.fail);
-      }),
-  );
+  return enqueue(async () => {
+    await ensureStoredBytes();
+    const db = await openDB();
+    const tx = db.transaction('videos', 'readonly');
+    const row = await readStore<unknown>(tx.objectStore('videos'), id);
+    await txDone(tx, 'Could not read that video.');
+    return asBlob(row, 'video/mp4');
+  });
 }
 
 export function saveSwing(meta: SwingMeta, video: Blob): Promise<void> {
-  return enqueue(
-    () =>
-      new Promise((resolve, reject) => {
-        const gate = settle(resolve, reject);
-        openDB()
-          .then((db) => {
-            const tx = db.transaction(['swings', 'videos'], 'readwrite');
-            tx.objectStore('swings').put(meta);
-            tx.objectStore('videos').put(video, meta.id);
-            tx.oncomplete = () => gate.ok(undefined);
-            tx.onerror = () => gate.fail(tx.error ?? new Error('Could not save the swing.'));
-            tx.onabort = () => gate.fail(tx.error ?? new Error('Could not save the swing.'));
-          })
-          .catch(gate.fail);
-      }),
-  );
+  return enqueue(async () => {
+    await requestPersistentStorage();
+    await ensureStoredBytes();
+    const videoRecord = await toStoredBytes(video, meta.mimeType || 'video/mp4');
+    const expected = videoRecord.bytes.byteLength;
+    if (expected === 0) {
+      throw new Error('That video was empty and was not saved.');
+    }
+    let thumbnail: StoredBytes | null = null;
+    if (meta.thumbnail) {
+      try {
+        const stored = await toStoredBytes(meta.thumbnail, 'image/jpeg');
+        thumbnail = stored.bytes.byteLength > 0 ? stored : null;
+      } catch {
+        thumbnail = null;
+      }
+    }
+    const record: StoredSwing = { ...meta, thumbnail };
+    const db = await openDB();
+    const tx = db.transaction(['swings', 'videos'], 'readwrite');
+    tx.objectStore('swings').put(record);
+    tx.objectStore('videos').put(videoRecord, meta.id);
+    await txDone(tx, 'Could not save the swing.');
+
+    const checkTx = db.transaction('videos', 'readonly');
+    const saved = await readStore<unknown>(checkTx.objectStore('videos'), meta.id);
+    await txDone(checkTx, 'Could not confirm the swing was saved.');
+    const kept = storedBytes(saved);
+    if (!kept || kept.bytes.byteLength !== expected) {
+      try {
+        const undo = db.transaction(['swings', 'videos'], 'readwrite');
+        undo.objectStore('swings').delete(meta.id);
+        undo.objectStore('videos').delete(meta.id);
+        await txDone(undo, 'Could not save the swing.');
+      } catch {
+        /* The message below is the one to show. */
+      }
+      throw new Error('The swing did not stay saved on this phone. Try again.');
+    }
+  });
 }
 
 export function updateSwing(id: string, partial: Partial<SwingMeta>): Promise<void> {
-  return enqueue(
-    () =>
-      new Promise((resolve, reject) => {
-        const gate = settle(resolve, reject);
-        openDB()
-          .then((db) => {
-            const tx = db.transaction('swings', 'readwrite');
-            const store = tx.objectStore('swings');
-            const req = store.get(id);
-            req.onsuccess = () => {
-              const current = req.result as SwingMeta | undefined;
-              if (!current) {
-                gate.fail(new Error('That swing is no longer on this phone.'));
-                return;
-              }
-              store.put({ ...current, ...partial, id: current.id });
-            };
-            req.onerror = () => gate.fail(req.error ?? new Error('Could not update the swing.'));
-            tx.oncomplete = () => gate.ok(undefined);
-            tx.onerror = () => gate.fail(tx.error ?? new Error('Could not update the swing.'));
-            tx.onabort = () => gate.fail(tx.error ?? new Error('Could not update the swing.'));
-          })
-          .catch(gate.fail);
-      }),
-  );
+  return enqueue(async () => {
+    await ensureStoredBytes();
+    const db = await openDB();
+    const readTx = db.transaction('swings', 'readonly');
+    const current = await readStore<StoredSwing | undefined>(readTx.objectStore('swings'), id);
+    await txDone(readTx, 'Could not read that swing.');
+    if (!current) throw new Error('That swing is no longer on this phone.');
+    const thumbnail = await thumbnailBytes(current.thumbnail, partial.thumbnail);
+    const next: StoredSwing = { ...current, ...partial, id: current.id, thumbnail };
+    const tx = db.transaction('swings', 'readwrite');
+    tx.objectStore('swings').put(next);
+    await txDone(tx, 'Could not update the swing.');
+  });
 }
 
 export function deleteSwing(id: string): Promise<void> {
-  return enqueue(
-    () =>
-      new Promise((resolve, reject) => {
-        const gate = settle(resolve, reject);
-        openDB()
-          .then((db) => {
-            const tx = db.transaction(['swings', 'videos'], 'readwrite');
-            tx.objectStore('swings').delete(id);
-            tx.objectStore('videos').delete(id);
-            tx.oncomplete = () => gate.ok(undefined);
-            tx.onerror = () => gate.fail(tx.error ?? new Error('Could not delete the swing.'));
-            tx.onabort = () => gate.fail(tx.error ?? new Error('Could not delete the swing.'));
-          })
-          .catch(gate.fail);
-      }),
-  );
+  return enqueue(async () => {
+    const db = await openDB();
+    const tx = db.transaction(['swings', 'videos'], 'readwrite');
+    tx.objectStore('swings').delete(id);
+    tx.objectStore('videos').delete(id);
+    await txDone(tx, 'Could not delete the swing.');
+  });
 }

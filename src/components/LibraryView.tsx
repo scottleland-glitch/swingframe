@@ -3,6 +3,7 @@ import { listSwings } from '../db';
 import { cx, formatBytes, formatDate, formatDuration, viewLabel } from '../format';
 import { isIos, isStandalone, requestPersistentStorage, storageGet, storageSet, storageUsage } from '../platform';
 import type { SwingMeta, ViewAngle } from '../types';
+import { APP_VERSION } from '../version';
 import { Icon } from './Icons';
 
 type Filter = 'all' | ViewAngle;
@@ -77,7 +78,9 @@ export function LibraryView({
           </span>
           <div>
             <p className="brand-name">Swingframe</p>
-            <p className="brand-sub">Scott&apos;s swing book</p>
+            <p className="brand-sub" data-testid="app-version">
+              Scott&apos;s swing book · Version {APP_VERSION}
+            </p>
           </div>
         </div>
         {usage != null && <p className="usage">{formatBytes(usage)} on this phone</p>}

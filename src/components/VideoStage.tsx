@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import { ZOOM_MAX, ZOOM_MIN } from '../constants';
 import { paint } from '../draw';
 import { uid } from '../format';
-import { exitNativeFullscreen, lockInlinePlayback } from '../inlineVideo';
+import { exitIfNativeFullscreen, loadInlineSource, markInline, mediaErrorMessage, paintFirstFrame } from '../inlineVideo';
 import {
   applyHandle,
   clamp,
@@ -128,7 +128,7 @@ export const VideoStage = forwardRef<
 
   const attachVideo = useCallback((node: HTMLVideoElement | null) => {
     videoRef.current = node;
-    if (node) lockInlinePlayback(node);
+    if (node) markInline(node);
   }, []);
 
   drawingsRef.current = drawings;
@@ -305,7 +305,6 @@ export const VideoStage = forwardRef<
   async function play() {
     const video = videoRef.current;
     if (!video) return;
-    lockInlinePlayback(video);
     stopManual();
     const nextRate = rateRef.current;
     video.playbackRate = nextRate;
@@ -656,40 +655,39 @@ export const VideoStage = forwardRef<
     if (!video) return;
     const url = URL.createObjectURL(blob);
     let cancelled = false;
-    const onMeta = () => {
+    setMediaError(null);
+    const showFrame = () => {
       if (cancelled) return;
-      setVideoSize({ w: video.videoWidth, h: video.videoHeight });
-      if (video.currentTime < 0.001 && video.duration > 0.1) {
-        try {
-          video.currentTime = Math.min(0.05, video.duration / 2);
-        } catch {
-          /* Some files are not seekable until the first play. */
-        }
-      }
+      if (video.videoWidth > 0) setVideoSize({ w: video.videoWidth, h: video.videoHeight });
+      if (video.readyState >= 2) paintFirstFrame(video);
     };
     const onErr = () => {
       if (cancelled) return;
-      setMediaError('This browser could not play that video. iPhone Safari plays Camera Roll clips, including slo-mo.');
+      setMediaError(mediaErrorMessage(video));
     };
-    const onNativeFullscreen = (event: Event) => {
-      event.preventDefault();
-      exitNativeFullscreen(video);
+    const onNativeFullscreen = () => {
+      exitIfNativeFullscreen(video);
     };
     const onTime = () => enforceTrim(video);
-    video.addEventListener('loadedmetadata', onMeta);
-    video.addEventListener('resize', onMeta);
+    video.addEventListener('loadedmetadata', showFrame);
+    video.addEventListener('loadeddata', showFrame);
+    video.addEventListener('resize', showFrame);
     video.addEventListener('error', onErr);
     video.addEventListener('webkitbeginfullscreen', onNativeFullscreen);
     video.addEventListener('timeupdate', onTime);
-    // Attributes first. iOS latches the system player if src is set before them.
-    lockInlinePlayback(video);
-    video.src = url;
+    loadInlineSource(video, url);
     video.playbackRate = rateRef.current;
+    const timer = window.setTimeout(() => {
+      if (cancelled || video.readyState >= 1 || video.error) return;
+      setMediaError('This phone did not start loading that video.');
+    }, 8000);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
       stopManual();
-      video.removeEventListener('loadedmetadata', onMeta);
-      video.removeEventListener('resize', onMeta);
+      video.removeEventListener('loadedmetadata', showFrame);
+      video.removeEventListener('loadeddata', showFrame);
+      video.removeEventListener('resize', showFrame);
       video.removeEventListener('error', onErr);
       video.removeEventListener('webkitbeginfullscreen', onNativeFullscreen);
       video.removeEventListener('timeupdate', onTime);
@@ -707,9 +705,14 @@ export const VideoStage = forwardRef<
     const main = videoRef.current;
     if (!over || !main || !overlayBlob) return;
     const url = URL.createObjectURL(overlayBlob);
-    lockInlinePlayback(over);
-    over.src = url;
+    const onFrame = () => paintFirstFrame(over);
+    const onNativeFullscreen = () => {
+      exitIfNativeFullscreen(over);
+    };
     over.muted = true;
+    over.addEventListener('loadeddata', onFrame);
+    over.addEventListener('webkitbeginfullscreen', onNativeFullscreen);
+    loadInlineSource(over, url);
     const sync = () => {
       const lead = videoRef.current;
       const follow = overlayRef.current;
@@ -723,11 +726,6 @@ export const VideoStage = forwardRef<
       if (lead.paused) follow.pause();
       else if (follow.paused) void follow.play().catch(() => undefined);
     };
-    const onNativeFullscreen = (event: Event) => {
-      event.preventDefault();
-      exitNativeFullscreen(over);
-    };
-    over.addEventListener('webkitbeginfullscreen', onNativeFullscreen);
     main.addEventListener('timeupdate', sync);
     main.addEventListener('seeked', sync);
     main.addEventListener('play', sync);
@@ -737,6 +735,7 @@ export const VideoStage = forwardRef<
       main.removeEventListener('seeked', sync);
       main.removeEventListener('play', sync);
       main.removeEventListener('pause', sync);
+      over.removeEventListener('loadeddata', onFrame);
       over.removeEventListener('webkitbeginfullscreen', onNativeFullscreen);
       over.pause();
       over.removeAttribute('src');
@@ -910,27 +909,21 @@ export const VideoStage = forwardRef<
       >
         <video
           ref={attachVideo}
-          className="inline-video"
           playsInline
           muted={muted}
           loop={loop}
-          preload="metadata"
+          preload="auto"
           controls={false}
-          disablePictureInPicture
-          disableRemotePlayback
           aria-label="Swing video"
-          onClick={(event) => event.preventDefault()}
         />
         {overlayBlob && (
           <video
             ref={overlayRef}
-            className="inline-video overlay-video"
+            className="overlay-video"
             playsInline
             muted
-            preload="metadata"
+            preload="auto"
             controls={false}
-            disablePictureInPicture
-            disableRemotePlayback
             aria-hidden="true"
           />
         )}

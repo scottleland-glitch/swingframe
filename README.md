@@ -7,7 +7,7 @@ It is a static web app, built to be added to an iPhone Home Screen and used one-
 ## What's in this version
 
 - **Capture.** Record with the phone camera, or choose an existing video (including slo-mo from the Camera app). Each swing is tagged Down the Line or Face On, with an optional date, club, and notes.
-- **Library.** A list on this phone, filtered by All, Down the Line, or Face On. Stored in IndexedDB, including the video file.
+- **Library.** A list on this phone, filtered by All, Down the Line, or Face On. Stored in IndexedDB. Each video is saved as bytes plus its MIME type (not a Blob URL and not a Blob value), because iOS drops Blob values when the Home Screen app closes. The player rebuilds a Blob from those bytes when you open the swing.
 - **Playback.** The video stays inside the page. It does not open the iPhone's full-screen player, so the drawing tools stay on screen. A white bar at the bottom has the speed, frame step, play, and a wrench. Drag the time at the top right, or the thin bar, to scrub. Speeds are 1×, ½, ¼, and 0.1×. The frame step size is 30, 60, 120, or 240 fps, saved with the swing. Sound, loop, details, and delete are under the ? button.
 - **Drawing.** Open the wrench. Straight lines (the segment you drag is extended across the frame, for a shaft or swing plane), freehand, a three-tap angle tool that shows degrees, circles, boxes, horizontal or vertical reference lines, and erase. Colors, move, reshape, undo, and clear. Flip mirrors the picture. Pinch zooms, and the ink stays on the video. Trim sets a start and end. Overlay lays another swing on top, half transparent. Drawings are stored in the video's own coordinate space, so they stay aligned when you zoom, flip, or rotate the phone, and they come back when you reopen the swing.
 - **Compare.** Pick two swings. In portrait they stack; turn the phone sideways (or use a wide window) and they sit side by side. Each clip scrubs on its own. Sync matches progress through the swing, so the second clip follows the one you play or scrub. Synced playback plays one video and seeks the other, which is the reliable way to do this on an iPhone.
@@ -73,8 +73,10 @@ Sound is off until you turn it on under **?**. Hearing impact is useful.
 
 ## Good to know
 
-- A slo-mo clip can be tens of megabytes. If the phone is full, saving fails with a clear message instead of a half-saved swing.
-- iOS can still delete website data if the app is never opened. Swingframe asks for persistent storage. Add it to the Home Screen and open it now and then. Deleting the Home Screen icon can delete the saved swings.
+- A slo-mo clip can be tens of megabytes. If the phone is full, or the save does not stick, Swingframe shows an error and does not pretend the swing is in the library.
+- The database name is `swingframe` on this site. It does not change with the `/swingframe/` path, and a service worker update does not erase it. The first save also asks the browser to keep storage (`navigator.storage.persist()`).
+- Swings saved on iPhone before this byte-storage fix can already be gone. iOS removed those Blob records when the app was closed. Import them again. New saves stay across launches.
+- iOS can still delete website data if the app is never opened, or if it refuses persistent storage. Add Swingframe to the Home Screen and open it now and then. Deleting the Home Screen icon can delete the saved swings.
 - iPhone videos are often HEVC. Safari plays them. Some desktop browsers will not, and will show a message on the player. Review those clips on the phone.
 - Frame stepping is only as precise as the browser's seek. The fps control sets the step size; it does not re-encode the video.
 - There is no analytics and no backend. After the app files load, video never leaves the phone.

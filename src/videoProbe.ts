@@ -1,4 +1,4 @@
-import { lockInlinePlayback } from './inlineVideo';
+import { loadInlineSource, markInline } from './inlineVideo';
 
 export interface ProbeResult {
   duration: number;
@@ -90,16 +90,17 @@ export function looksLikeVideo(file: File): boolean {
 export async function probeVideo(file: File): Promise<ProbeResult> {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
-  video.preload = 'metadata';
   video.muted = true;
-  lockInlinePlayback(video);
+  video.defaultMuted = true;
+  video.setAttribute('muted', '');
+  markInline(video);
   video.style.position = 'fixed';
   video.style.left = '-4000px';
   video.style.width = '8px';
   video.style.height = '8px';
   document.body.appendChild(video);
   try {
-    video.src = url;
+    loadInlineSource(video, url);
     await waitFor(video, 'loadedmetadata', 8000);
     if (!Number.isFinite(video.duration)) {
       await waitFor(video, 'durationchange', 1500).catch(() => undefined);

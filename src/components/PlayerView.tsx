@@ -5,6 +5,7 @@ import { cx, formatDate, formatRate, formatScrub, formatTime, viewLabel } from '
 import { withColor } from '../geometry';
 import type { SwingMeta, Tool } from '../types';
 import { useSwing } from '../useSwing';
+import { APP_VERSION } from '../version';
 import { DetailsSheet } from './DetailsSheet';
 import { Dialog } from './Dialog';
 import { Icon, type IconName } from './Icons';
@@ -229,7 +230,9 @@ export function PlayerView({
         ? 'Loading swing…'
         : load.status === 'error'
           ? load.message
-          : "This swing isn't on this phone.";
+          : load.status === 'missing'
+            ? load.message
+            : "This swing isn't on this phone.";
     return (
       <div className="screen">
         <header className="topbar">
@@ -574,6 +577,9 @@ export function PlayerView({
                 {loop ? 'Loop on' : 'Loop off'}
               </button>
             </div>
+            <p className="faint" data-testid="help-version">
+              Version {APP_VERSION}
+            </p>
             <div className="panel-actions">
               <button type="button" className="btn" onClick={() => setDetails(true)}>
                 Edit details

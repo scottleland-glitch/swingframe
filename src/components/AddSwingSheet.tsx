@@ -3,7 +3,7 @@ import { CLUBS, DEFAULT_FPS } from '../constants';
 import { isQuotaError, quotaMessage, saveSwing } from '../db';
 import { errorMessage, formatBytes, todayISO, uid } from '../format';
 import type { SwingMeta, ViewAngle } from '../types';
-import { lockInlinePlayback } from '../inlineVideo';
+import { exitIfNativeFullscreen, loadInlineSource, mediaErrorMessage, paintFirstFrame } from '../inlineVideo';
 import { looksLikeVideo, probeVideo, type ProbeResult } from '../videoProbe';
 import { Icon } from './Icons';
 import { ViewPicker } from './ViewPicker';
@@ -16,6 +16,8 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewRef = useRef<HTMLVideoElement>(null);
   const [view, setView] = useState<ViewAngle | null>(null);
   const [date, setDate] = useState(todayISO);
   const [club, setClub] = useState('');
@@ -34,6 +36,37 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
     };
   }, [previewUrl]);
 
+  useEffect(() => {
+    const node = previewRef.current;
+    if (!node || !previewUrl) return;
+    let cancelled = false;
+    setPreviewError(null);
+    const onReady = () => {
+      if (cancelled) return;
+      paintFirstFrame(node);
+      if (node.videoWidth > 0) setPreviewError(null);
+    };
+    const onErr = () => {
+      if (!cancelled) setPreviewError(mediaErrorMessage(node));
+    };
+    const onFs = () => exitIfNativeFullscreen(node);
+    node.addEventListener('loadeddata', onReady);
+    node.addEventListener('error', onErr);
+    node.addEventListener('webkitbeginfullscreen', onFs);
+    loadInlineSource(node, previewUrl);
+    const timer = window.setTimeout(() => {
+      if (cancelled || node.readyState >= 1 || node.error) return;
+      setPreviewError('This phone did not start loading that video.');
+    }, 8000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      node.removeEventListener('loadeddata', onReady);
+      node.removeEventListener('error', onErr);
+      node.removeEventListener('webkitbeginfullscreen', onFs);
+    };
+  }, [previewUrl]);
+
   async function takeFile(next: File | null) {
     if (!next) return;
     if (next.type && !looksLikeVideo(next)) {
@@ -41,6 +74,7 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
       return;
     }
     setError(null);
+    setPreviewError(null);
     setReading(true);
     setFile(next);
     setProbe(null);
@@ -152,17 +186,19 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
           >
             {previewUrl && (
               <video
-                className="preview inline-video"
+                ref={previewRef}
+                className="preview"
                 playsInline
                 muted
-                preload="metadata"
+                preload="auto"
                 controls={false}
-                ref={(node) => {
-                  if (!node) return;
-                  lockInlinePlayback(node);
-                  if (!node.src) node.src = previewUrl;
-                }}
+                aria-label="Import preview"
               />
+            )}
+            {previewError && (
+              <p className="banner" role="alert">
+                {previewError}
+              </p>
             )}
             <p className="file-line">
               {file.name || 'Video'} · {formatBytes(file.size)}

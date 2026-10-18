@@ -361,7 +361,7 @@ function Pane({
               {swing.load.status === 'error'
                 ? swing.load.message
                 : swing.load.status === 'missing'
-                  ? "This swing isn't on this phone."
+                  ? swing.load.message
                   : 'Loading…'}
             </p>
           </div>

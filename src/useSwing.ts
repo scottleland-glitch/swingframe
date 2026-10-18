@@ -4,7 +4,7 @@ import type { Drawing, SwingMeta } from './types';
 
 export type SwingLoad =
   | { status: 'loading' }
-  | { status: 'missing' }
+  | { status: 'missing'; message: string }
   | { status: 'error'; message: string }
   | { status: 'ready' };
 
@@ -33,7 +33,12 @@ export function useSwing(id: string) {
         if (!meta || !video) {
           setSwing(null);
           setBlob(null);
-          setLoad({ status: 'missing' });
+          setLoad({
+            status: 'missing',
+            message: meta
+              ? 'The video for this swing did not stay on this phone. Import it again.'
+              : "This swing isn't on this phone.",
+          });
           return;
         }
         const next = Array.isArray(meta.drawings) ? meta.drawings : [];

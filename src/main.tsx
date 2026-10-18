@@ -14,3 +14,9 @@ createRoot(root).render(
 );
 
 void requestPersistentStorage();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.ready.then((registration) => registration.update()).catch(() => undefined);
+  });
+}
