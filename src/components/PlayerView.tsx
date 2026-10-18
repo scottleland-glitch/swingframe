@@ -76,12 +76,10 @@ function useClock(engine: RefObject<VideoEngine | null>) {
 export function PlayerView({
   id,
   onBack,
-  onCompare,
   onChanged,
 }: {
   id: string;
   onBack: () => void;
-  onCompare: (id: string) => void;
   onChanged: () => void;
 }) {
   const { swing, blob, drawings, pastCount, load, saveError, commit, undo, patch, reload } = useSwing(id);
@@ -976,7 +974,6 @@ export function PlayerView({
                       setToolsOpen(false);
                     }}
                   />
-                  <ToolButton icon="compare" label="Compare" testId="edit-compare" onClick={() => onCompare(swing.id)} />
                   <ToolButton
                     icon="overlay"
                     label="Overlay"

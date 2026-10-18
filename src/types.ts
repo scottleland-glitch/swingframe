@@ -135,7 +135,4 @@ export interface SwingMeta {
   tracer?: TracerCalibration | null;
 }
 
-export type Route =
-  | { name: 'library'; picking?: boolean; picked?: string[] }
-  | { name: 'player'; id: string }
-  | { name: 'compare'; a: string; b: string };
+export type Route = { name: 'library' } | { name: 'player'; id: string };

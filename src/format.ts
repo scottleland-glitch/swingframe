@@ -79,14 +79,6 @@ export function formatRate(speed: number): string {
   return '1x';
 }
 
-export function speedLabel(speed: number): string {
-  if (speed === 1) return '1×';
-  if (speed === 0.5) return '½';
-  if (speed === 0.25) return '¼';
-  if (speed === 0.1) return '0.1×';
-  return `${speed}×`;
-}
-
 export function errorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message) return err.message;
   return fallback;

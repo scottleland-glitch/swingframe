@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { AddSwingSheet } from './components/AddSwingSheet';
-import { CompareView } from './components/CompareView';
 import { LibraryView } from './components/LibraryView';
 import { PlayerView } from './components/PlayerView';
 import type { Route } from './types';
@@ -12,10 +11,6 @@ function isRoute(value: unknown): value is Route {
   const name = (value as { name?: unknown }).name;
   if (name === 'library') return true;
   if (name === 'player') return typeof (value as { id?: unknown }).id === 'string';
-  if (name === 'compare') {
-    const pair = value as { a?: unknown; b?: unknown };
-    return typeof pair.a === 'string' && typeof pair.b === 'string';
-  }
   return false;
 }
 
@@ -72,33 +67,16 @@ export function App() {
     else setAdding(false);
   }
 
-  const libraryKey =
-    route.name === 'library'
-      ? `${version}-${route.picking ? 'pick' : 'browse'}-${(route.picked ?? []).join(',')}`
-      : 'hidden';
+  const libraryKey = route.name === 'library' ? String(version) : 'hidden';
 
   return (
     <div className="app-shell">
       {route.name === 'library' && (
-        <LibraryView
-          key={libraryKey}
-          picking={Boolean(route.picking)}
-          initialPicked={route.picked ?? []}
-          onOpen={(id) => navigate({ name: 'player', id })}
-          onCompare={(a, b) => navigate({ name: 'compare', a, b })}
-          onAdd={openAdd}
-        />
+        <LibraryView key={libraryKey} onOpen={(id) => navigate({ name: 'player', id })} onAdd={openAdd} />
       )}
       {route.name === 'player' && (
-        <PlayerView
-          key={route.id}
-          id={route.id}
-          onBack={back}
-          onCompare={(id) => navigate({ name: 'library', picking: true, picked: [id] })}
-          onChanged={() => setVersion((value) => value + 1)}
-        />
+        <PlayerView key={route.id} id={route.id} onBack={back} onChanged={() => setVersion((value) => value + 1)} />
       )}
-      {route.name === 'compare' && <CompareView key={`${route.a}:${route.b}`} a={route.a} b={route.b} onBack={back} />}
       {adding && (
         <AddSwingSheet
           onClose={closeAdd}

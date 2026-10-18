@@ -23,7 +23,6 @@ export type IconName =
   | 'vline'
   | 'camera'
   | 'photos'
-  | 'compare'
   | 'check'
   | 'close'
   | 'plus'
@@ -185,13 +184,6 @@ function paths(name: IconName) {
         <>
           <rect x="4" y="5" width="16" height="14" rx="2" />
           <path d="m4 15 4-3 3 2 4-4 5 4" />
-        </>
-      );
-    case 'compare':
-      return (
-        <>
-          <rect x="3" y="5" width="7" height="14" rx="1.4" />
-          <rect x="14" y="5" width="7" height="14" rx="1.4" />
         </>
       );
     case 'check':

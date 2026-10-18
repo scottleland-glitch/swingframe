@@ -25,32 +25,19 @@ const VIEW_FILTERS: { id: ViewFilter; label: string; name: string }[] = [
   { id: 'face', label: 'FO', name: 'Face On' },
 ];
 
-export function LibraryView({
-  picking = false,
-  initialPicked = [],
-  onOpen,
-  onCompare,
-  onAdd,
-}: {
-  picking?: boolean;
-  initialPicked?: string[];
-  onOpen: (id: string) => void;
-  onCompare: (a: string, b: string) => void;
-  onAdd: () => void;
-}) {
+export function LibraryView({ onOpen, onAdd }: { onOpen: (id: string) => void; onAdd: () => void }) {
   const [swings, setSwings] = useState<SwingMeta[]>([]);
   const [clubFilter, setClubFilter] = useState<ClubFilter>('all');
   const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pickMode, setPickMode] = useState(picking);
-  const [picked, setPicked] = useState<string[]>(initialPicked);
   const [selecting, setSelecting] = useState(false);
   const [chosen, setChosen] = useState<string[]>([]);
   const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
   const [revealedId, setRevealedId] = useState<string | null>(null);
   const [driveOpen, setDriveOpen] = useState(false);
   const [usage, setUsage] = useState<number | null>(null);
-  const [persisted, setPersisted] = useState<boolean | null>(null);
   const [hideInstall, setHideInstall] = useState(() => storageGet('swingframe.install.v1') === '1');
 
   useEffect(() => {
@@ -62,9 +49,7 @@ export function LibraryView({
       .catch((err: unknown) => {
         if (!cancel) setError(err instanceof Error ? err.message : 'Could not read saved swings.');
       });
-    void requestPersistentStorage().then((ok) => {
-      if (!cancel) setPersisted(ok);
-    });
+    void requestPersistentStorage();
     void storedUsage().then((bytes) => {
       if (!cancel) setUsage(bytes);
     });
@@ -86,15 +71,24 @@ export function LibraryView({
     [viewFiltered, clubFilter],
   );
   const showInstall = isIos() && !isStandalone() && !hideInstall;
-  const swipeEnabled = !selecting && !pickMode;
+  const swipeEnabled = !selecting;
+  const activeFilters = (clubFilter === 'all' ? 0 : 1) + (viewFilter === 'all' ? 0 : 1);
 
-  function togglePick(id: string) {
-    setPicked((current) => {
-      if (current.includes(id)) return current.filter((item) => item !== id);
-      if (current.length >= 2) return [current[1], id];
-      return [...current, id];
-    });
-  }
+  useEffect(() => {
+    if (!filterOpen) return;
+    function onPointer(event: PointerEvent) {
+      if (!filterRef.current?.contains(event.target as Node)) setFilterOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setFilterOpen(false);
+    }
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [filterOpen]);
 
   function toggleChosen(id: string) {
     setChosen((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
@@ -112,7 +106,6 @@ export function LibraryView({
       await deleteSwings(ids);
       setSwings((current) => current.filter((swing) => !ids.includes(swing.id)));
       setChosen((current) => current.filter((id) => !ids.includes(id)));
-      setPicked((current) => current.filter((id) => !ids.includes(id)));
       setRevealedId(null);
       setSelecting(false);
       refreshUsage();
@@ -150,43 +143,90 @@ export function LibraryView({
         </div>
       </header>
 
-      <div className="filter-groups">
-        <div className="filter-row">
-          <span className="filter-label" id="filter-club-label">
-            Club
-          </span>
-          <div className="filters" role="group" aria-labelledby="filter-club-label">
-            {CLUB_FILTERS.map((item) => (
-              <FilterChip
-                key={item.id}
-                testId={`filter-club-${item.id}`}
-                label={item.label}
-                name={item.name}
-                count={viewFiltered.filter((swing) => item.id === 'all' || clubGroup(swing.club) === item.id).length}
-                pressed={clubFilter === item.id}
-                onSelect={() => setClubFilter(item.id)}
-              />
-            ))}
-          </div>
+      <div className="library-tools">
+        <div className="filter-wrap" ref={filterRef}>
+          <button
+            type="button"
+            className={cx('filter-toggle', filterOpen && 'is-open')}
+            aria-expanded={filterOpen}
+            aria-haspopup="dialog"
+            data-testid="filter-menu"
+            onClick={() => setFilterOpen((open) => !open)}
+          >
+            Filter
+            {activeFilters > 0 && (
+              <span className="filter-badge" data-testid="filter-badge">
+                {activeFilters}
+              </span>
+            )}
+          </button>
+          {filterOpen && (
+            <div className="filter-panel" role="dialog" aria-label="Filters">
+              <div className="filter-row">
+                <span className="filter-label" id="filter-club-label">
+                  Club
+                </span>
+                <div className="filters" role="group" aria-labelledby="filter-club-label">
+                  {CLUB_FILTERS.map((item) => (
+                    <FilterChip
+                      key={item.id}
+                      testId={`filter-club-${item.id}`}
+                      label={item.label}
+                      name={item.name}
+                      count={viewFiltered.filter((swing) => item.id === 'all' || clubGroup(swing.club) === item.id).length}
+                      pressed={clubFilter === item.id}
+                      onSelect={() => setClubFilter(item.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="filter-row">
+                <span className="filter-label" id="filter-view-label">
+                  View
+                </span>
+                <div className="filters" role="group" aria-labelledby="filter-view-label">
+                  {VIEW_FILTERS.map((item) => (
+                    <FilterChip
+                      key={item.id}
+                      testId={`filter-view-${item.id === 'face' ? 'fo' : item.id}`}
+                      label={item.label}
+                      name={item.name}
+                      count={clubFiltered.filter((swing) => item.id === 'all' || swing.view === item.id).length}
+                      pressed={viewFilter === item.id}
+                      onSelect={() => setViewFilter(item.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="text-btn filter-clear"
+                data-testid="filter-clear"
+                disabled={activeFilters === 0}
+                onClick={() => {
+                  setClubFilter('all');
+                  setViewFilter('all');
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          )}
         </div>
-        <div className="filter-row">
-          <span className="filter-label" id="filter-view-label">
-            View
-          </span>
-          <div className="filters" role="group" aria-labelledby="filter-view-label">
-            {VIEW_FILTERS.map((item) => (
-              <FilterChip
-                key={item.id}
-                testId={`filter-view-${item.id === 'face' ? 'fo' : item.id}`}
-                label={item.label}
-                name={item.name}
-                count={clubFiltered.filter((swing) => item.id === 'all' || swing.view === item.id).length}
-                pressed={viewFilter === item.id}
-                onSelect={() => setViewFilter(item.id)}
-              />
-            ))}
-          </div>
-        </div>
+        <button
+          type="button"
+          className="text-btn"
+          data-testid="select-mode"
+          disabled={swings.length === 0 || selecting}
+          onClick={() => {
+            setSelecting(true);
+            setChosen([]);
+            setRevealedId(null);
+            setFilterOpen(false);
+          }}
+        >
+          Select
+        </button>
       </div>
 
       <div className="list-scroll">
@@ -209,14 +249,7 @@ export function LibraryView({
             </button>
           </div>
         )}
-        {persisted === false && (
-          <div className="note">
-            This phone has not granted permanent storage. Open Swingframe from the Home Screen now and then so iOS is
-            less likely to clear saved swings.
-          </div>
-        )}
         {error && <p className="banner">{error}</p>}
-        {pickMode && <p className="pick-hint">Choose two swings. The order you tap is left/top, then right/bottom.</p>}
         {selecting && <p className="pick-hint">Tap the swings to delete, then Delete.</p>}
         {visible.length === 0 ? (
           <div className="empty">
@@ -227,35 +260,25 @@ export function LibraryView({
             <p>
               {swings.length === 0
                 ? 'Record on the range, or pull a slo-mo clip from your camera roll. Drawings stay on this phone.'
-                : 'Try another club or camera angle, or add a swing.'}
+                : 'Try another club or camera angle, clear the filter, or add a swing.'}
             </p>
           </div>
         ) : (
           <ul className="swing-list">
             {visible.map((swing) => {
-              const selected = selecting ? chosen.includes(swing.id) : picked.includes(swing.id);
-              const mark = selecting
-                ? selected
-                  ? '✓'
-                  : ''
-                : pickMode
-                  ? selected
-                    ? String(picked.indexOf(swing.id) + 1)
-                    : ''
-                  : null;
+              const selected = chosen.includes(swing.id);
               return (
                 <SwingRow
                   key={swing.id}
                   swing={swing}
-                  selected={selected}
-                  mark={mark}
+                  selected={selecting && selected}
+                  mark={selecting ? (selected ? '✓' : '') : null}
                   revealed={revealedId === swing.id}
                   swipeEnabled={swipeEnabled}
                   onReveal={() => setRevealedId(swing.id)}
                   onCloseReveal={() => setRevealedId((current) => (current === swing.id ? null : current))}
                   onOpen={() => {
                     if (selecting) toggleChosen(swing.id);
-                    else if (pickMode) togglePick(swing.id);
                     else onOpen(swing.id);
                   }}
                   onDelete={() => setPendingDelete([swing.id])}
@@ -267,87 +290,36 @@ export function LibraryView({
         <p className="privacy">Videos stay on this phone. Nothing is uploaded. Swipe a swing left to delete it.</p>
       </div>
 
-      <div className="bottom-bar">
-        {pickMode ? (
-          <>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setPickMode(false);
-                setPicked([]);
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn primary"
-              data-testid="compare-open"
-              disabled={picked.length !== 2}
-              onClick={() => onCompare(picked[0], picked[1])}
-            >
-              Compare
-            </button>
-          </>
-        ) : selecting ? (
-          <>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setSelecting(false);
-                setChosen([]);
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn danger"
-              data-testid="delete-selected"
-              disabled={chosen.length === 0}
-              onClick={() => setPendingDelete(chosen)}
-            >
-              Delete{chosen.length > 0 ? ` ${chosen.length}` : ''}
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              className="btn"
-              data-testid="select-mode"
-              disabled={swings.length === 0}
-              onClick={() => {
-                setSelecting(true);
-                setChosen([]);
-                setRevealedId(null);
-              }}
-            >
-              Select
-            </button>
-            <button
-              type="button"
-              className="btn"
-              data-testid="compare-mode"
-              disabled={swings.length < 2}
-              onClick={() => {
-                setSelecting(false);
-                setChosen([]);
-                setPickMode(true);
-              }}
-            >
-              <Icon name="compare" />
-              Compare
-            </button>
-            <button type="button" className="btn primary" data-testid="add-swing" onClick={onAdd}>
-              <Icon name="plus" />
-              Add swing
-            </button>
-          </>
-        )}
-      </div>
+      {selecting ? (
+        <div className="bottom-bar">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              setSelecting(false);
+              setChosen([]);
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn danger"
+            data-testid="delete-selected"
+            disabled={chosen.length === 0}
+            onClick={() => setPendingDelete(chosen)}
+          >
+            Delete{chosen.length > 0 ? ` ${chosen.length}` : ''}
+          </button>
+        </div>
+      ) : (
+        <div className="add-bar">
+          <button type="button" className="add-swing" data-testid="add-swing" onClick={onAdd}>
+            <Icon name="plus" />
+            Add swing
+          </button>
+        </div>
+      )}
 
       {driveOpen && DRIVE_ENABLED && (
         <DriveSheet
