@@ -96,6 +96,14 @@ export const VideoStage = forwardRef<
     suggestDrag?: 'video' | 'reticle' | 'off';
     onSuggestAim?: (pt: Pt, phase: 'move' | 'up') => void;
     onConfirmAim?: () => void;
+    /** The marker for the current setup step. Tap confirms it. A drag confirms on release. */
+    setupMarker?: { point: Pt; kind: 'ball' | 'target' | 'ground'; toe?: [Pt, Pt]; parallel?: [Pt, Pt] } | null;
+    onSetupGesture?: (point: Pt, phase: 'move' | 'up' | 'tap') => void;
+    /** Finished setup: drag the existing markers. Not drawn into exports. */
+    editMarkers?: { ball: Pt | null; target: Pt | null; ground: Pt | null } | null;
+    onEditGesture?: (which: 'ball' | 'target' | 'ground', point: Pt, phase: 'move' | 'up') => void;
+    /** Setup owns the picture, so drawing gestures stay off. */
+    freezeDraw?: boolean;
     immersive?: boolean;
     onExitImmersive?: () => void;
     tracerPath?: TracerPoint[] | null;
@@ -127,6 +135,11 @@ export const VideoStage = forwardRef<
     suggestDrag = 'off',
     onSuggestAim,
     onConfirmAim,
+    setupMarker = null,
+    onSetupGesture,
+    editMarkers = null,
+    onEditGesture,
+    freezeDraw = false,
     immersive = false,
     onExitImmersive,
     tracerPath = null,
@@ -177,6 +190,12 @@ export const VideoStage = forwardRef<
   const aimSuggestionRef = useRef(aimSuggestion);
   const suggestDragRef = useRef(suggestDrag);
   const onSuggestAimRef = useRef(onSuggestAim);
+  const setupMarkerRef = useRef(setupMarker);
+  const onSetupGestureRef = useRef(onSetupGesture);
+  const editMarkersRef = useRef(editMarkers);
+  const onEditGestureRef = useRef(onEditGesture);
+  const setupDragRef = useRef<{ x: number; y: number; moved: boolean; which: 'ball' | 'target' | 'ground' | null } | null>(null);
+  const freezeDrawRef = useRef(freezeDraw);
   const placingRef = useRef(false);
   const placingKind = useRef<'ball' | 'target' | 'ground' | 'suggest' | null>(null);
   const immersiveRef = useRef(immersive);
@@ -214,6 +233,11 @@ export const VideoStage = forwardRef<
   aimSuggestionRef.current = aimSuggestion;
   suggestDragRef.current = suggestDrag;
   onSuggestAimRef.current = onSuggestAim;
+  setupMarkerRef.current = setupMarker;
+  onSetupGestureRef.current = onSetupGesture;
+  editMarkersRef.current = editMarkers;
+  onEditGestureRef.current = onEditGesture;
+  freezeDrawRef.current = freezeDraw;
   immersiveRef.current = immersive;
   onExitImmersiveRef.current = onExitImmersive;
   layoutRef.current = layout;
@@ -474,6 +498,43 @@ export const VideoStage = forwardRef<
     const sx = rect.left + visualX * rect.width;
     const sy = rect.top + suggestion.point.y * rect.height;
     return Math.hypot(clientX - sx, clientY - sy) < 64;
+  }
+
+  function markerScreen(point: Pt): { x: number; y: number } | null {
+    const rect = canvasRect();
+    if (!rect) return null;
+    const visualX = mirroredRef.current ? 1 - point.x : point.x;
+    return { x: rect.left + visualX * rect.width, y: rect.top + point.y * rect.height };
+  }
+
+  function nearMarker(clientX: number, clientY: number, point: Pt, reach = 72): boolean {
+    const at = markerScreen(point);
+    return at != null && Math.hypot(clientX - at.x, clientY - at.y) <= reach;
+  }
+
+  function editHit(clientX: number, clientY: number): 'ball' | 'target' | 'ground' | null {
+    const markers = editMarkersRef.current;
+    if (!markers) return null;
+    let best: { kind: 'ball' | 'target' | 'ground'; distance: number } | null = null;
+    const choices: { kind: 'ball' | 'target' | 'ground'; point: Pt | null }[] = [
+      { kind: 'ball', point: markers.ball },
+      { kind: 'target', point: markers.target },
+      { kind: 'ground', point: markers.ground },
+    ];
+    for (const choice of choices) {
+      if (!choice.point || !nearMarker(clientX, clientY, choice.point, 64)) continue;
+      const at = markerScreen(choice.point);
+      if (!at) continue;
+      const distance = Math.hypot(clientX - at.x, clientY - at.y);
+      if (!best || distance < best.distance) best = { kind: choice.kind, distance };
+    }
+    return best?.kind ?? null;
+  }
+
+  function liftedPoint(clientX: number, clientY: number): Pt | null {
+    const rect = canvasRect();
+    if (!rect) return null;
+    return pointAboveFinger(clientX, clientY, rect, mirroredRef.current).point;
   }
 
   function onVideo(clientX: number, clientY: number, p: Pt) {
@@ -1106,6 +1167,26 @@ export const VideoStage = forwardRef<
     },
   };
 
+  function overlayAt(point: Pt): { x: number; y: number } | null {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const stage = stageRef.current?.getBoundingClientRect();
+    if (!rect || !stage || rect.width < 2 || rect.height < 2) return null;
+    const visualX = mirrored ? 1 - point.x : point.x;
+    return {
+      x: rect.left - stage.left + visualX * rect.width,
+      y: rect.top - stage.top + point.y * rect.height,
+    };
+  }
+
+  const setupOnStage = setupMarker ? overlayAt(setupMarker.point) : null;
+  const editOnStage = editMarkers
+    ? {
+        ball: editMarkers.ball ? overlayAt(editMarkers.ball) : null,
+        target: editMarkers.target ? overlayAt(editMarkers.target) : null,
+        ground: editMarkers.ground ? overlayAt(editMarkers.ground) : null,
+      }
+    : null;
+
   const suggestionOnStage = (() => {
     if (!aimSuggestion) return null;
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -1143,6 +1224,20 @@ export const VideoStage = forwardRef<
       data-testid="stage"
       onContextMenu={(event) => event.preventDefault()}
       onPointerDown={(event) => {
+        if (!calibrateRef.current && setupMarkerRef.current) {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setupDragRef.current = { x: event.clientX, y: event.clientY, moved: false, which: null };
+          return;
+        }
+        if (!calibrateRef.current && editMarkersRef.current) {
+          const which = editHit(event.clientX, event.clientY);
+          if (which) {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setupDragRef.current = { x: event.clientX, y: event.clientY, moved: false, which };
+          }
+          return;
+        }
+        if (freezeDrawRef.current) return;
         if (calibrateRef.current) {
           const p = normFromClient(event.clientX, event.clientY);
           if (p && onVideo(event.clientX, event.clientY, p)) {
@@ -1171,6 +1266,17 @@ export const VideoStage = forwardRef<
         beginGesture(event);
       }}
       onPointerMove={(event) => {
+        const setupDrag = setupDragRef.current;
+        if (setupDrag) {
+          if (Math.hypot(event.clientX - setupDrag.x, event.clientY - setupDrag.y) > 8) setupDrag.moved = true;
+          if (setupDrag.moved) {
+            const point = liftedPoint(event.clientX, event.clientY);
+            if (!point) return;
+            if (setupDrag.which) onEditGestureRef.current?.(setupDrag.which, point, 'move');
+            else onSetupGestureRef.current?.(point, 'move');
+          }
+          return;
+        }
         if (placingRef.current && placingKind.current) {
           placeReticle(event.clientX, event.clientY, 'move', placingKind.current);
           return;
@@ -1186,6 +1292,18 @@ export const VideoStage = forwardRef<
         moveGesture(event);
       }}
       onPointerUp={(event) => {
+        const setupDrag = setupDragRef.current;
+        if (setupDrag) {
+          setupDragRef.current = null;
+          if (setupDrag.moved) {
+            const point = liftedPoint(event.clientX, event.clientY);
+            if (point && setupDrag.which) onEditGestureRef.current?.(setupDrag.which, point, 'up');
+            else if (point) onSetupGestureRef.current?.(point, 'up');
+          } else if (!setupDrag.which && setupMarkerRef.current) {
+            onSetupGestureRef.current?.(setupMarkerRef.current.point, 'tap');
+          }
+          return;
+        }
         if (placingRef.current && placingKind.current) {
           placeReticle(event.clientX, event.clientY, 'up', placingKind.current);
           placingRef.current = false;
@@ -1237,6 +1355,7 @@ export const VideoStage = forwardRef<
           placingKind.current = null;
           setReticle(null);
         }
+        setupDragRef.current = null;
         pointers.current.delete(event.pointerId);
         pinchRef.current = null;
         twoRef.current = null;
@@ -1277,6 +1396,32 @@ export const VideoStage = forwardRef<
           />
         )}
         <canvas ref={canvasRef} />
+        {setupMarker && !reticle && (setupMarker.toe || setupMarker.parallel) && (
+          <svg className="aim-guides" viewBox={`0 0 ${layout.w} ${layout.h}`} aria-hidden="true">
+            {setupMarker.toe && (
+              <line
+                x1={setupMarker.toe[0].x * layout.w}
+                y1={setupMarker.toe[0].y * layout.h}
+                x2={setupMarker.toe[1].x * layout.w}
+                y2={setupMarker.toe[1].y * layout.h}
+                stroke="rgba(255,255,255,0.45)"
+                strokeWidth="1.5"
+                strokeDasharray="4 5"
+              />
+            )}
+            {setupMarker.parallel && (
+              <line
+                x1={setupMarker.parallel[0].x * layout.w}
+                y1={setupMarker.parallel[0].y * layout.h}
+                x2={setupMarker.parallel[1].x * layout.w}
+                y2={setupMarker.parallel[1].y * layout.h}
+                stroke="rgba(126,224,255,0.55)"
+                strokeWidth="1.5"
+                strokeDasharray="3 6"
+              />
+            )}
+          </svg>
+        )}
         {aimSuggestion && !reticle && (aimSuggestion.toe || aimSuggestion.parallel) && (
           <svg className="aim-guides" viewBox={`0 0 ${layout.w} ${layout.h}`} aria-hidden="true">
             {aimSuggestion.toe && (
@@ -1310,6 +1455,35 @@ export const VideoStage = forwardRef<
           <span className="aim-reticle-label">{reticle.kind === 'ball' ? 'Ball' : reticle.kind === 'ground' ? 'Ground' : 'Aim'}</span>
         </div>
       )}
+      {setupOnStage && !reticle && (
+        <div
+          className="aim-reticle"
+          data-testid="setup-marker"
+          data-kind={setupMarker?.kind === 'ball' ? 'ball' : setupMarker?.kind === 'ground' ? 'ground' : 'suggest'}
+          style={{ left: setupOnStage.x, top: setupOnStage.y }}
+        >
+          <span className="aim-reticle-ring" />
+        </div>
+      )}
+      {editOnStage && !setupOnStage && (
+        <>
+          {editOnStage.ball && (
+            <div className="aim-reticle" data-testid="edit-marker-ball" data-kind="ball" style={{ left: editOnStage.ball.x, top: editOnStage.ball.y }}>
+              <span className="aim-reticle-ring" />
+            </div>
+          )}
+          {editOnStage.target && (
+            <div className="aim-reticle" data-testid="edit-marker-aim" data-kind="suggest" style={{ left: editOnStage.target.x, top: editOnStage.target.y }}>
+              <span className="aim-reticle-ring" />
+            </div>
+          )}
+          {editOnStage.ground && (
+            <div className="aim-reticle" data-testid="edit-marker-ground" data-kind="ground" style={{ left: editOnStage.ground.x, top: editOnStage.ground.y }}>
+              <span className="aim-reticle-ring" />
+            </div>
+          )}
+        </>
+      )}
       {aimSuggestion && !reticle && suggestionOnStage && (
         <>
           <div className="aim-reticle" data-testid="aim-suggestion" data-kind="suggest" style={{ left: suggestionOnStage.x, top: suggestionOnStage.y }}>
@@ -1338,7 +1512,7 @@ export const VideoStage = forwardRef<
               : 'Drag the aim point. The crosshair sits above your finger.'}
         </div>
       ) : (
-        gestureHint && !panMode && <div className="gesture-chip">{gestureHint}</div>
+        !freezeDraw && !setupMarker && !editMarkers && gestureHint && !panMode && <div className="gesture-chip">{gestureHint}</div>
       )}
       {mediaError && <div className="stage-error">{mediaError}</div>}
     </div>

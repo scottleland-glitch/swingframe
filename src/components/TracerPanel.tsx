@@ -38,12 +38,12 @@ export function TracerPanel({
   onTracer,
   onDetect,
   onMarkImpact,
-  onCalibrate,
   onClear,
   canClear,
   exporting,
   onExport,
   onBack,
+  numbersOnly,
 }: {
   view: ViewAngle;
   shot: ShotData;
@@ -54,12 +54,13 @@ export function TracerPanel({
   onTracer: (tracer: TracerCalibration) => void;
   onDetect: () => void;
   onMarkImpact: () => void;
-  onCalibrate: (which: 'ball' | 'target' | 'ground') => void;
   onClear: () => void;
   canClear: boolean;
   exporting: boolean;
   onExport: () => void;
   onBack: () => void;
+  /** Five launch inputs and the screenshot reader. Nothing else. */
+  numbersOnly?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [reading, setReading] = useState(false);
@@ -96,11 +97,13 @@ export function TracerPanel({
   }
 
   return (
-    <div className="panel-page" data-testid="tracer-panel">
-      <h2>Tracer</h2>
-      <p className="panel-hint">
-        {view === 'face' ? 'Face On.' : 'Down the Line. The aim point is on the picture.'} Type the numbers or add a screenshot.
-      </p>
+    <div className="panel-page" data-testid={numbersOnly ? 'numbers-sheet' : 'tracer-panel'}>
+      <h2>{numbersOnly ? 'Launch' : 'Tracer'}</h2>
+      {!numbersOnly && (
+        <p className="panel-hint">
+          {view === 'face' ? 'Face On.' : 'Down the Line.'} Place the aim, ball, and horizon with the tracer button. Launch numbers are the 123 button.
+        </p>
+      )}
       <input
         ref={fileRef}
         className="tracer-file"
@@ -128,6 +131,7 @@ export function TracerPanel({
             .finally(() => setReading(false));
         }}
       />
+      {numbersOnly && (
       <button
         type="button"
         className="btn primary"
@@ -137,7 +141,9 @@ export function TracerPanel({
       >
         {reading ? 'Reading screenshot…' : 'Foresight screenshot'}
       </button>
+      )}
       {(localNote || note) && <p className="tracer-status">{localNote || note}</p>}
+      {numbersOnly && (
       <fieldset className="tracer-lock" disabled={locked}>
       <div className="tracer-grid">
         {FIELDS.map((field) => {
@@ -237,6 +243,14 @@ export function TracerPanel({
         L and R are degrees left or right of the aim line. Launch Direction (HLA) is the start line. Spin axis curves the ball off that line, and the aim point is not the landing.
       </p>
       </fieldset>
+      )}
+      {numbersOnly && (
+        <button type="button" className="btn primary" data-testid="numbers-done" onClick={onBack}>
+          Done
+        </button>
+      )}
+      {!numbersOnly && (
+      <>
       <div className="panel-actions">
         <button
           type="button"
@@ -272,18 +286,10 @@ export function TracerPanel({
           : 'Lock freezes the tracer so nothing moves by accident.'}{' '}
         Show aim point draws the ball, the aim point, the landing ground, and the white aim line. Show tracer is the flight line. The same switches sit on the picture, including in full screen, and they are saved with this swing.
       </p>
+      </>
+      )}
+      {!numbersOnly && (
       <fieldset className="tracer-lock" disabled={locked}>
-      <div className="panel-actions">
-        <button type="button" className="btn" data-testid="tracer-ball" onClick={() => onCalibrate('ball')}>
-          {tracer.ball ? 'Move ball' : 'Tap the ball'}
-        </button>
-        <button type="button" className="btn" data-testid="tracer-target" onClick={() => onCalibrate('target')}>
-          {tracer.target ? 'Move aim line' : 'Tap aim line'}
-        </button>
-        <button type="button" className="btn" data-testid="tracer-ground" onClick={() => onCalibrate('ground')}>
-          {tracer.ground ? 'Move landing ground' : 'Landing ground'}
-        </button>
-      </div>
       <label className="tracer-slider">
         <span>Camera height {feet(tracer.cameraHeight).toFixed(1)} ft</span>
         <input
@@ -336,6 +342,9 @@ export function TracerPanel({
         </button>
       </div>
       </fieldset>
+      )}
+      {!numbersOnly && (
+      <>
       <button type="button" className="btn" data-testid="tracer-export" disabled={exporting} onClick={onExport}>
         {exporting ? 'Exporting…' : 'Export video'}
       </button>
@@ -348,6 +357,8 @@ export function TracerPanel({
       <button type="button" className="text-btn" onClick={onBack}>
         Back
       </button>
+      </>
+      )}
     </div>
   );
 }

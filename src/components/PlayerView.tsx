@@ -13,6 +13,7 @@ import { offerRecording, recordTracerVideo } from '../tracer/exportVideo';
 import { parallelAim, straightAheadAim, type ToeLine } from '../tracer/aimSuggest';
 import { detectFeet, frameAtTime } from '../tracer/pose';
 import { defaultTracer, projectFlight } from '../tracer/project';
+import { ballGuess, launchIsSet, setupStep, type SetupPhase } from '../tracer/setup';
 import { clipEndTime, holdSpan, nextHold, playClock, tracerPlayhead } from '../tracer/timing';
 import type { Drawing, Pt, ShotData, SwingMeta, Tool, TracerCalibration } from '../types';
 import { useSwing } from '../useSwing';
@@ -104,7 +105,10 @@ export function PlayerView({
   const [helpOpen, setHelpOpen] = useState(false);
   const [pinch, setPinch] = useState(false);
   const [panelPage, setPanelPage] = useState<'draw' | 'edit' | 'trim' | 'overlay' | 'tracer'>('draw');
-  const [tracerMode, setTracerMode] = useState<'ball' | 'target' | 'ground' | null>(null);
+  const [setupPhase, setSetupPhase] = useState<SetupPhase | null>(null);
+  const [draftPoint, setDraftPoint] = useState<Pt | null>(null);
+  const [feetTick, setFeetTick] = useState(0);
+  const [numbersOpen, setNumbersOpen] = useState(false);
   const [aimGuides, setAimGuides] = useState<{ toe: [Pt, Pt]; parallel: [Pt, Pt] } | null>(null);
   const [shot, setShot] = useState<ShotData | null>(null);
   const [tracerCal, setTracerCal] = useState<TracerCalibration | null>(null);
@@ -115,10 +119,11 @@ export function PlayerView({
   const [exportProgress, setExportProgress] = useState(0);
   const exportAbort = useRef<AbortController | null>(null);
   const hydratedFor = useRef<string | null>(null);
-  const tracerModeRef = useRef<'ball' | 'target' | 'ground' | null>(null);
   const aimEpoch = useRef(0);
   const feetRef = useRef<ToeLine | null>(null);
-  const viewRef = useRef(swing?.view);
+  const draftTouched = useRef(false);
+  const draftRef = useRef<Pt | null>(null);
+  const setupPhaseRef = useRef<SetupPhase | null>(null);
   const tracerPending = useRef<{ shot: ShotData; tracer: TracerCalibration } | null>(null);
   const tracerTimer = useRef<number | null>(null);
   const tracerRun = useRef(false);
@@ -166,7 +171,8 @@ export function PlayerView({
   const calRef = useRef(activeCal);
   shotRef.current = activeShot;
   calRef.current = activeCal;
-  viewRef.current = swing?.view;
+  draftRef.current = draftPoint;
+  setupPhaseRef.current = setupPhase;
 
   const rememberTracer = useCallback(
     (nextShot: ShotData, nextTracer: TracerCalibration, immediate = false) => {
@@ -189,60 +195,69 @@ export function PlayerView({
     [patch],
   );
 
-  const setMode = useCallback((next: 'ball' | 'target' | 'ground' | null) => {
-    tracerModeRef.current = next;
-    setTracerMode(next);
+  const carryMeters = useCallback(() => {
+    const flight = simulateShot(shotRef.current);
+    return flight ? flight.carryYd * 0.9144 : 140;
   }, []);
 
-  const retargetSuggestion = useCallback(() => {
+  const cameraOf = useCallback(() => {
     const cal = calRef.current;
-    if (viewRef.current !== 'dtl' || cal.locked || cal.aimSuggested !== true) return;
-    const flight = simulateShot(shotRef.current);
-    const camera = {
+    return {
       view: 'dtl' as const,
       height: cal.cameraHeight,
       distance: cal.cameraDistance,
       fov: cal.fov,
     };
-    const straight = straightAheadAim({
-      ball: cal.ball,
-      groundY: cal.ground?.y ?? null,
-      camera,
-      carryMeters: flight ? flight.carryYd * 0.9144 : 140,
-    });
-    const feet = feetRef.current;
-    if (feet && cal.ball) {
-      const next = parallelAim({ ball: cal.ball, feet, depthY: cal.ground?.y ?? straight.y });
-      if (next) {
-        setAimGuides({ toe: next.toe, parallel: next.parallel });
-        rememberTracer(shotRef.current, { ...calRef.current, target: next.point, aimSuggested: true }, true);
-        return;
+  }, []);
+
+  const seedFor = useCallback(
+    (phase: SetupPhase): Pt | null => {
+      const cal = calRef.current;
+      if (phase === 'aim') {
+        if (cal.target) return cal.target;
+        return straightAheadAim({
+          ball: cal.ball,
+          groundY: cal.ground?.y ?? null,
+          camera: cameraOf(),
+          carryMeters: carryMeters(),
+        });
       }
-    }
-    setAimGuides(null);
-    rememberTracer(shotRef.current, { ...calRef.current, target: straight, aimSuggested: true }, true);
-  }, [rememberTracer]);
+      if (phase === 'ball') {
+        if (cal.ball) return cal.ball;
+        return ballGuess(feetRef.current);
+      }
+      if (phase === 'horizon') {
+        if (cal.ground) return cal.ground;
+        const far = straightAheadAim({
+          ball: cal.ball,
+          groundY: null,
+          camera: cameraOf(),
+          carryMeters: carryMeters(),
+        });
+        return { x: 0.5, y: far.y };
+      }
+      return null;
+    },
+    [cameraOf, carryMeters],
+  );
+
+  const enterStep = useCallback(
+    (phase: SetupPhase) => {
+      draftTouched.current = false;
+      setupPhaseRef.current = phase;
+      setSetupPhase(phase);
+      const seed = seedFor(phase);
+      draftRef.current = seed;
+      setDraftPoint(seed);
+      setAimGuides(null);
+    },
+    [seedFor],
+  );
 
   useEffect(() => {
-    if (!toolsOpen || panelPage !== 'tracer' || !swing || swing.id !== id || swing.view !== 'dtl') return;
+    if ((setupPhase !== 'aim' && setupPhase !== 'ball') || !swing || swing.id !== id || swing.view !== 'dtl') return;
     if (calRef.current.locked) return;
-    if (calRef.current.target && calRef.current.aimSuggested !== true) return;
     const epoch = aimEpoch.current;
-    if (!calRef.current.target) {
-      const flight = simulateShot(shotRef.current);
-      const point = straightAheadAim({
-        ball: calRef.current.ball,
-        groundY: calRef.current.ground?.y ?? null,
-        camera: {
-          view: 'dtl',
-          height: calRef.current.cameraHeight,
-          distance: calRef.current.cameraDistance,
-          fov: calRef.current.fov,
-        },
-        carryMeters: flight ? flight.carryYd * 0.9144 : 140,
-      });
-      rememberTracer(shotRef.current, { ...calRef.current, target: point, aimSuggested: true }, true);
-    }
     let cancelled = false;
     void (async () => {
       const frames: HTMLCanvasElement[] = [];
@@ -260,22 +275,58 @@ export function PlayerView({
         const found = await detectFeet(frame, import.meta.env.BASE_URL);
         if (found && (!best || found.confidence > best.confidence)) best = found;
       }
-      if (cancelled || aimEpoch.current !== epoch || calRef.current.aimSuggested !== true) return;
-      if (!best) return;
+      if (cancelled || aimEpoch.current !== epoch || !best) return;
       feetRef.current = best.feet;
-      retargetSuggestion();
+      setFeetTick((tick) => tick + 1);
+      if (draftTouched.current || calRef.current.locked) return;
+      if (setupPhaseRef.current === 'aim' && calRef.current.ball) {
+        const straight = straightAheadAim({
+          ball: calRef.current.ball,
+          groundY: calRef.current.ground?.y ?? null,
+          camera: cameraOf(),
+          carryMeters: carryMeters(),
+        });
+        const next = parallelAim({
+          ball: calRef.current.ball,
+          feet: best.feet,
+          depthY: calRef.current.ground?.y ?? straight.y,
+        });
+        if (!next || draftTouched.current || setupPhaseRef.current !== 'aim') return;
+        setAimGuides({ toe: next.toe, parallel: next.parallel });
+        draftRef.current = next.point;
+        setDraftPoint(next.point);
+        return;
+      }
+      if (setupPhaseRef.current === 'ball' && !calRef.current.ball) {
+        const guess = ballGuess(best.feet);
+        draftRef.current = guess;
+        setDraftPoint(guess);
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [toolsOpen, panelPage, id, swing?.id, swing?.view, swing?.trimIn, blob, rememberTracer, retargetSuggestion]);
+  }, [setupPhase, id, swing?.id, swing?.view, swing?.trimIn, blob, cameraOf, carryMeters]);
+
+  useEffect(() => {
+    if (setupPhase !== 'ball' || draftTouched.current || calRef.current.ball) return;
+    const next = ballGuess(feetRef.current);
+    draftRef.current = next;
+    setDraftPoint(next);
+  }, [setupPhase, feetTick]);
 
   useEffect(() => {
     hydratedFor.current = null;
-    setMode(null);
     feetRef.current = null;
     aimEpoch.current += 1;
     setAimGuides(null);
+    draftTouched.current = false;
+    draftRef.current = null;
+    setupPhaseRef.current = null;
+    setSetupPhase(null);
+    setDraftPoint(null);
+    setFeetTick(0);
+    setNumbersOpen(false);
     tracerUndo.current = null;
     tracerUndoStamp.current = 0;
     drawingUndoStamp.current = 0;
@@ -293,7 +344,7 @@ export function PlayerView({
     holdingRef.current = false;
     setTracerHold(0);
     setHolding(false);
-  }, [id, setMode]);
+  }, [id]);
 
   useEffect(() => () => barObserver.current?.disconnect(), []);
 
@@ -315,29 +366,50 @@ export function PlayerView({
     };
   }, [patch]);
 
-  const tracerPath = useMemo(() => {
-    if (!swing?.view || !activeCal.ball || !activeCal.target) return null;
-    const flight = simulateShot(activeShot);
-    if (!flight) return null;
-    return projectFlight(
-      flight.samples,
-      {
-        view: swing.view,
-        height: activeCal.cameraHeight,
-        distance: activeCal.cameraDistance,
-        fov: activeCal.fov,
-      },
-      activeCal.ball,
-      activeCal.target,
-      swing.videoWidth || 9,
-      swing.videoHeight || 16,
-      activeCal.ground,
-    );
-  }, [swing?.view, swing?.videoWidth, swing?.videoHeight, activeShot, activeCal]);
+  const placedCal = useMemo(() => {
+    if (!draftPoint || setupPhase == null || setupPhase === 'edit' || setupPhase === 'impact') return activeCal;
+    if (setupPhase === 'aim') return { ...activeCal, target: draftPoint };
+    if (setupPhase === 'ball') return { ...activeCal, ball: draftPoint };
+    return { ...activeCal, ground: draftPoint };
+  }, [activeCal, draftPoint, setupPhase]);
+
+  const projectFor = useCallback(
+    (cal: TracerCalibration) => {
+      if (!swing?.view || !cal.ball || !cal.target) return null;
+      const flight = simulateShot(activeShot);
+      if (!flight) return null;
+      return projectFlight(
+        flight.samples,
+        {
+          view: swing.view,
+          height: cal.cameraHeight,
+          distance: cal.cameraDistance,
+          fov: cal.fov,
+        },
+        cal.ball,
+        cal.target,
+        swing.videoWidth || 9,
+        swing.videoHeight || 16,
+        cal.ground,
+      );
+    },
+    [swing?.view, swing?.videoWidth, swing?.videoHeight, activeShot],
+  );
+
+  const tracerPath = useMemo(() => projectFor(activeCal), [projectFor, activeCal]);
+  const previewPath = useMemo(
+    () => (placedCal === activeCal ? tracerPath : projectFor(placedCal)),
+    [placedCal, activeCal, tracerPath, projectFor],
+  );
 
   const tracerFlight = tracerPath?.length ? tracerPath[tracerPath.length - 1].t : 0;
   flightRef.current = tracerFlight;
-  const tuningTracer = tracerMode != null || (toolsOpen && panelPage === 'tracer');
+  const tuningTracer =
+    setupPhase === 'horizon' ||
+    setupPhase === 'impact' ||
+    setupPhase === 'edit' ||
+    numbersOpen ||
+    (toolsOpen && panelPage === 'tracer');
   const clipEnd = clipEndTime(clock.duration, swing?.trimIn, swing?.trimOut);
   const playback = playClock({
     videoTime: clock.time,
@@ -589,13 +661,125 @@ export function PlayerView({
     }
   }, [pastCount, restoreTracer, undo]);
 
+  const leaveSetup = useCallback(() => {
+    setupPhaseRef.current = null;
+    setSetupPhase(null);
+    draftRef.current = null;
+    setDraftPoint(null);
+    draftTouched.current = false;
+    setAimGuides(null);
+  }, []);
+
+  const beginSetup = useCallback(
+    (redo = false) => {
+      stageRef.current?.pause();
+      clearTracerHold();
+      setToolsOpen(false);
+      setHelpOpen(false);
+      setImmersive(false);
+      setNumbersOpen(false);
+      setTracerEngaged(true);
+      const cal = calRef.current;
+      if (!redo && setupStep(cal) === 'edit') {
+        draftTouched.current = false;
+        draftRef.current = null;
+        setDraftPoint(null);
+        setAimGuides(null);
+        setupPhaseRef.current = 'edit';
+        setSetupPhase('edit');
+        return;
+      }
+      enterStep(redo ? 'aim' : setupStep(cal));
+    },
+    [clearTracerHold, enterStep],
+  );
+
+  const confirmDraft = useCallback(
+    (point: Pt) => {
+      if (calRef.current.locked) return;
+      const phase = setupPhaseRef.current;
+      const cal = calRef.current;
+      if (phase === 'aim') {
+        aimEpoch.current += 1;
+        setAimGuides(null);
+        rememberTracer(shotRef.current, { ...cal, target: point, aimSuggested: false }, true);
+        enterStep('ball');
+        return;
+      }
+      if (phase === 'ball') {
+        rememberTracer(shotRef.current, { ...cal, ball: point }, true);
+        enterStep('horizon');
+        return;
+      }
+      if (phase === 'horizon') {
+        rememberTracer(shotRef.current, { ...cal, ground: point }, true);
+        enterStep('impact');
+      }
+    },
+    [enterStep, rememberTracer],
+  );
+
+  const onSetupGesture = useCallback(
+    (point: Pt, phase: 'move' | 'up' | 'tap') => {
+      if (calRef.current.locked) return;
+      if (phase === 'move') {
+        draftTouched.current = true;
+        aimEpoch.current += 1;
+        setAimGuides(null);
+        draftRef.current = point;
+        setDraftPoint(point);
+        return;
+      }
+      if (phase === 'tap') {
+        const current = draftRef.current;
+        if (current) confirmDraft(current);
+        return;
+      }
+      confirmDraft(point);
+    },
+    [confirmDraft],
+  );
+
+  const onEditGesture = useCallback(
+    (which: 'ball' | 'target' | 'ground', point: Pt, phase: 'move' | 'up') => {
+      if (calRef.current.locked) return;
+      const cal = calRef.current;
+      const immediate = phase === 'up';
+      if (which === 'ball') rememberTracer(shotRef.current, { ...cal, ball: point }, immediate);
+      else if (which === 'target') {
+        aimEpoch.current += 1;
+        rememberTracer(shotRef.current, { ...cal, target: point, aimSuggested: false }, immediate);
+      } else rememberTracer(shotRef.current, { ...cal, ground: point }, immediate);
+    },
+    [rememberTracer],
+  );
+
+  const setupBack = useCallback(() => {
+    const phase = setupPhaseRef.current;
+    if (phase === 'ball') enterStep('aim');
+    else if (phase === 'horizon') enterStep('ball');
+    else if (phase === 'impact') enterStep('horizon');
+  }, [enterStep]);
+
+  const commitImpact = useCallback(
+    (time: number) => {
+      if (calRef.current.locked) return;
+      rememberTracer(shotRef.current, { ...calRef.current, impactTime: time }, true);
+      setTracerNote(null);
+      setTracerEngaged(true);
+      if (setupPhaseRef.current != null) leaveSetup();
+      if (!launchIsSet(shotRef.current)) {
+        setToolsOpen(false);
+        setNumbersOpen(true);
+      }
+    },
+    [leaveSetup, rememberTracer],
+  );
+
   const markImpact = useCallback(() => {
-    if (calRef.current.locked) return;
     const time = stageRef.current?.getTime() ?? 0;
-    rememberTracer(shotRef.current, { ...calRef.current, impactTime: time }, true);
-    setTracerNote(null);
-    setTracerEngaged(true);
-  }, [rememberTracer]);
+    commitImpact(time);
+  }, [commitImpact]);
 
   const toggleAim = useCallback(() => {
     rememberTracer(shotRef.current, { ...calRef.current, showAim: calRef.current.showAim !== true }, true);
@@ -608,9 +792,8 @@ export function PlayerView({
 
   const toggleLock = useCallback(() => {
     const next = { ...calRef.current, locked: calRef.current.locked !== true };
-    if (next.locked) setMode(null);
     rememberTracer(shotRef.current, next, true);
-  }, [rememberTracer, setMode]);
+  }, [rememberTracer]);
 
   const clearTracer = useCallback(() => {
     const prevShot = shotRef.current;
@@ -624,10 +807,12 @@ export function PlayerView({
     setTracerCal(blankTracer);
     shotRef.current = blankShot;
     calRef.current = blankTracer;
-    setMode(null);
     feetRef.current = null;
     aimEpoch.current += 1;
     setAimGuides(null);
+    leaveSetup();
+    setNumbersOpen(false);
+    setFeetTick(0);
     clearTracerHold();
     setTracerEngaged(false);
     setTracerNote(null);
@@ -646,7 +831,7 @@ export function PlayerView({
         setTracerEngaged(true);
         setPlayError('Could not clear the tracer.');
       });
-  }, [clearTracerHold, patch, setMode]);
+  }, [clearTracerHold, leaveSetup, patch]);
 
   const canClear = drawings.length > 0 || hasDraft;
 
@@ -693,11 +878,9 @@ export function PlayerView({
     setPinch(false);
     setToolsOpen(false);
     setPanelPage('draw');
-    setMode(null);
   }
 
-  function openMenu(page: 'draw' | 'edit' | 'tracer') {
-    if (page === 'tracer') setTracerEngaged(true);
+  function openMenu(page: 'draw' | 'edit') {
     if (toolsOpen && panelPage === page) {
       setToolsOpen(false);
       return;
@@ -863,8 +1046,18 @@ export function PlayerView({
       });
   };
 
+  const setupKind = setupPhase === 'ball' ? 'ball' : setupPhase === 'horizon' ? 'ground' : 'target';
+  const numbersMissing = activeCal.impactTime != null && !launchIsSet(activeShot);
+
   return (
-    <div className={cx('screen player-screen', immersive && 'is-immersive')}>
+    <div
+      className={cx(
+        'screen player-screen',
+        immersive && 'is-immersive',
+        setupPhase && 'is-setup',
+        setupPhase === 'impact' && 'is-setup-impact',
+      )}
+    >
       <div className="stage-wrap player-stage">
         <VideoStage
           ref={stageRef}
@@ -884,76 +1077,32 @@ export function PlayerView({
           onSelect={setSelectedId}
           onCommit={commitDrawings}
           onDraftChange={setHasDraft}
-          calibrate={activeCal.locked ? null : tracerMode}
           immersive={immersive}
           onExitImmersive={() => setImmersive(false)}
-          onCalibrate={(pt, phase) => {
-            if (calRef.current.locked) return tracerModeRef.current;
-            const mode = tracerModeRef.current;
-            if (mode === 'ball') {
-              rememberTracer(shotRef.current, { ...calRef.current, ball: pt }, phase === 'up');
-              if (phase === 'up') {
-                if (viewRef.current === 'face') {
-                  setMode('target');
-                  return 'target';
+          setupMarker={
+            draftPoint && (setupPhase === 'aim' || setupPhase === 'ball' || setupPhase === 'horizon')
+              ? {
+                  point: draftPoint,
+                  kind: setupKind,
+                  toe: setupPhase === 'aim' ? aimGuides?.toe : undefined,
+                  parallel: setupPhase === 'aim' ? aimGuides?.parallel : undefined,
                 }
-                retargetSuggestion();
-                setMode(null);
-                return null;
-              }
-              return 'ball';
-            }
-            if (mode === 'target') {
-              aimEpoch.current += 1;
-              setAimGuides(null);
-              rememberTracer(shotRef.current, { ...calRef.current, target: pt, aimSuggested: false }, phase === 'up');
-              if (phase === 'up') {
-                setMode(null);
-                return null;
-              }
-              return 'target';
-            }
-            if (mode === 'ground') {
-              rememberTracer(shotRef.current, { ...calRef.current, ground: pt }, phase === 'up');
-              if (phase === 'up') {
-                retargetSuggestion();
-                setMode(null);
-                return null;
-              }
-              return 'ground';
-            }
-            return null;
-          }}
-          aimSuggestion={
-            swing.view === 'dtl' && activeCal.aimSuggested === true && activeCal.target && !activeCal.locked && tracerMode == null
-              ? { point: activeCal.target, toe: aimGuides?.toe, parallel: aimGuides?.parallel }
               : null
           }
-          suggestDrag={
-            swing.view !== 'dtl' || activeCal.aimSuggested !== true || activeCal.locked || tracerMode != null
-              ? 'off'
-              : toolsOpen && panelPage === 'tracer'
-                ? 'video'
-                : 'reticle'
+          onSetupGesture={onSetupGesture}
+          editMarkers={
+            setupPhase === 'edit'
+              ? { ball: activeCal.ball, target: activeCal.target, ground: activeCal.ground ?? null }
+              : null
           }
-          onSuggestAim={(pt, phase) => {
-            if (calRef.current.locked) return;
-            aimEpoch.current += 1;
-            setAimGuides(null);
-            rememberTracer(shotRef.current, { ...calRef.current, target: pt, aimSuggested: false }, phase === 'up');
-          }}
-          onConfirmAim={() => {
-            if (calRef.current.locked || calRef.current.aimSuggested !== true) return;
-            aimEpoch.current += 1;
-            setAimGuides(null);
-            rememberTracer(shotRef.current, { ...calRef.current, aimSuggested: false }, true);
-          }}
+          onEditGesture={onEditGesture}
+          freezeDraw={setupPhase != null}
           tracerPath={
-            activeCal.showTracer !== false && (tuningTracer || activeCal.impactTime != null) ? tracerPath : null
+            activeCal.showTracer !== false && (tuningTracer || activeCal.impactTime != null) ? previewPath : null
           }
           tracerElapsed={tracerElapsed}
           tracerMarks={
-            activeCal.showAim === true || tracerMode != null
+            setupPhase == null && activeCal.showAim === true
               ? { ball: activeCal.ball, target: activeCal.target, ground: activeCal.ground ?? null }
               : null
           }
@@ -971,6 +1120,40 @@ export function PlayerView({
           <button type="button" onClick={() => exportAbort.current?.abort()}>
             Cancel
           </button>
+        </div>
+      )}
+
+      {setupPhase && (
+        <div className="setup-chrome">
+          <button type="button" className="float-btn setup-x" aria-label="Cancel setup" data-testid="setup-cancel" onClick={leaveSetup}>
+            <Icon name="close" />
+          </button>
+          {setupPhase !== 'aim' && setupPhase !== 'edit' && (
+            <button type="button" className="float-btn setup-back" aria-label="Previous step" data-testid="setup-back" onClick={setupBack}>
+              <Icon name="back" />
+            </button>
+          )}
+          {(setupPhase === 'aim' || setupPhase === 'ball' || setupPhase === 'horizon') && (
+            <p className="setup-hint" data-testid="setup-hint">
+              {setupPhase === 'aim' ? 'Set aim point' : setupPhase === 'ball' ? 'Set ball position' : 'Set horizon'}
+            </p>
+          )}
+          {setupPhase === 'impact' && activeCal.locked !== true && (
+            <button type="button" className="setup-impact" data-testid="set-impact-setup" onClick={markImpact}>
+              Set impact time
+            </button>
+          )}
+          {setupPhase === 'edit' && (
+            <button
+              type="button"
+              className="setup-redo"
+              data-testid="redo-setup"
+              disabled={activeCal.locked === true}
+              onClick={() => beginSetup(true)}
+            >
+              Redo setup
+            </button>
+          )}
         </div>
       )}
 
@@ -1105,17 +1288,31 @@ export function PlayerView({
           </button>
           <button
             type="button"
-            className={cx('bar-icon bar-tracer', toolsOpen && panelPage === 'tracer' && 'is-on')}
+            className={cx('bar-icon bar-tracer', setupPhase != null && 'is-on')}
             aria-label="Tracer"
-            aria-pressed={toolsOpen && panelPage === 'tracer'}
+            aria-pressed={setupPhase != null}
             data-testid="tracer-toggle"
-            onClick={() => openMenu('tracer')}
+            onClick={() => beginSetup()}
           >
             <Icon name="tracer" />
           </button>
           <button
             type="button"
-            className={cx('bar-icon bar-wrench', toolsOpen && (panelPage === 'edit' || panelPage === 'trim' || panelPage === 'overlay') && 'is-on')}
+            className={cx('bar-icon', numbersOpen && 'is-on', numbersMissing && 'needs-numbers')}
+            aria-label="Launch numbers"
+            aria-pressed={numbersOpen}
+            data-testid="numbers-toggle"
+            onClick={() => {
+              setNumbersOpen((open) => !open);
+              setToolsOpen(false);
+              setHelpOpen(false);
+            }}
+          >
+            <Icon name="numbers" />
+          </button>
+          <button
+            type="button"
+            className={cx('bar-icon bar-wrench', toolsOpen && (panelPage === 'edit' || panelPage === 'trim' || panelPage === 'overlay' || panelPage === 'tracer') && 'is-on')}
             aria-label="Edit tools"
             aria-pressed={toolsOpen && (panelPage === 'edit' || panelPage === 'trim' || panelPage === 'overlay')}
             data-testid="tools-toggle"
@@ -1224,6 +1421,7 @@ export function PlayerView({
                     testId="edit-overlay"
                     onClick={() => setPanelPage('overlay')}
                   />
+                  <ToolButton icon="tracer" label="Tracer" testId="edit-tracer" onClick={() => setPanelPage('tracer')} />
                 </div>
               </>
             )}
@@ -1282,7 +1480,6 @@ export function PlayerView({
                 note={tracerNote}
                 onShot={(next) => rememberTracer(next, calRef.current, true)}
                 onTracer={(next) => {
-                  if (next.locked) setMode(null);
                   const prev = calRef.current;
                   const immediate =
                     Boolean(next.locked) !== Boolean(prev.locked) ||
@@ -1300,9 +1497,9 @@ export function PlayerView({
                         return;
                       }
                       clearTracerHold();
-                      rememberTracer(shotRef.current, { ...calRef.current, impactTime: time }, true);
                       stageRef.current?.pause();
                       stageRef.current?.seek(time);
+                      commitImpact(time);
                     })
                     .catch(() => setTracerNote('Could not find the hit. Pause on that frame and tap Set impact time.'))
                     .finally(() => setImpactBusy(false));
@@ -1312,15 +1509,6 @@ export function PlayerView({
                 canClear={tracerIsSet(activeShot, activeCal)}
                 exporting={exporting}
                 onExport={startExport}
-                onCalibrate={(which) => {
-                  if (calRef.current.locked) return;
-                  if (which === 'target') {
-                    aimEpoch.current += 1;
-                    setAimGuides(null);
-                  }
-                  setMode(which);
-                  setToolsOpen(false);
-                }}
                 onBack={() => setToolsOpen(false)}
               />
             )}
@@ -1371,6 +1559,36 @@ export function PlayerView({
         </div>
       )}
 
+      {numbersOpen && (
+        <div
+          className="tool-backdrop is-tracer"
+          data-testid="numbers-backdrop"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setNumbersOpen(false);
+          }}
+        >
+          <div className="tool-panel" role="dialog" aria-label="Launch numbers">
+            <TracerPanel
+              numbersOnly
+              view={swing.view}
+              shot={activeShot}
+              tracer={activeCal}
+              busy={impactBusy}
+              note={tracerNote}
+              onShot={(next) => rememberTracer(next, calRef.current, true)}
+              onTracer={(next) => rememberTracer(shotRef.current, next, true)}
+              onDetect={() => undefined}
+              onMarkImpact={markImpact}
+              onClear={() => setConfirmTracer(true)}
+              canClear={tracerIsSet(activeShot, activeCal)}
+              exporting={exporting}
+              onExport={startExport}
+              onBack={() => setNumbersOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
       {helpOpen && (
         <div className="sheet" role="dialog" aria-modal="true" aria-label="Help">
           <header className="topbar">
@@ -1387,8 +1605,7 @@ export function PlayerView({
           <div className="sheet-body">
             <p className="tip">
               The video stays on this page. Tap the pencil for drawing tools. Place a drawing with two fingers. Undo is on the white bar, and Clear all is in the drawing menu.
-              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon opens the ball flight. On Down the Line an aim point shows as soon as that menu opens. Check it, or drag it. Landing ground is the far edge of the range, and it sets how high the ball finishes.
-              Pause on impact and tap Set impact time on the bar. That button hides while the tracer is locked. Clear tracer removes the line. Undo puts it back.
+              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon walks through aim, ball, and horizon on the full picture. Tap a circle to keep it, or drag it. After the horizon, scrub to the hit and tap Set impact time. If launch numbers are missing, that sheet opens on its own. The 123 icon opens the numbers any time. The wrench holds the camera, export, and clear. Set impact time hides while the tracer is locked. Clear tracer removes the line. Undo puts it back.
             </p>
             {swing.notes ? <p className="note-block">{swing.notes}</p> : null}
             <div className="fps-row" role="group" aria-label="Frame step size">

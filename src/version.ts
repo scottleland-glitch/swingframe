@@ -1,2 +1,2 @@
 /** Shown in the app so a stale Home Screen cache is obvious. */
-export const APP_VERSION = '20';
+export const APP_VERSION = '21';

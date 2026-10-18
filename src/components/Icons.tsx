@@ -38,7 +38,8 @@ export type IconName =
   | 'draw'
   | 'crosshair'
   | 'lock'
-  | 'unlock';
+  | 'unlock'
+  | 'numbers';
 
 export function Icon({ name }: { name: IconName }) {
   return (
@@ -288,6 +289,12 @@ function paths(name: IconName) {
           <rect x="5" y="11" width="14" height="9" rx="1.6" />
           <path d="M8 11V8a4 4 0 0 1 7.6-1.4" />
         </>
+      );
+    case 'numbers':
+      return (
+        <text x="12" y="16" textAnchor="middle" fontSize="8.5" fontWeight="700" fill="currentColor" stroke="none" fontFamily="sans-serif">
+          123
+        </text>
       );
     default: {
       const never: never = name;
