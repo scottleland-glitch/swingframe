@@ -34,6 +34,7 @@ export type IconName =
   | 'trim'
   | 'pinch'
   | 'overlay'
+  | 'tracer'
   | 'erase'
   | 'help';
 
@@ -242,6 +243,13 @@ function paths(name: IconName) {
         <>
           <rect x="4" y="6" width="10" height="12" rx="1.4" />
           <rect x="10" y="4" width="10" height="12" rx="1.4" />
+        </>
+      );
+    case 'tracer':
+      return (
+        <>
+          <path d="M4 18c3.5-1 5.5-9 8-9s3.2 7 8 5" />
+          <circle cx="19" cy="14" r="1.5" fill="currentColor" stroke="none" />
         </>
       );
     case 'erase':

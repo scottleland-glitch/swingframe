@@ -94,7 +94,46 @@ describe('backup json', () => {
     expect(parsed?.club).toBe('PW');
     expect(parsed?.drawings).toHaveLength(1);
     expect(parsed?.drive.videoId).toBe('video');
+    expect(parsed?.shot).toBeNull();
+    expect(parsed?.tracer).toBeNull();
     expect(parseBackup('{"version":1}')).toBeNull();
     expect(driveFileNameSafe('swing-1', 'IMG 3803.mov')).toBe('swing-1-IMG 3803.mov');
+  });
+
+  it('round-trips shot and tracer data and still reads a backup from before the tracer', () => {
+    const drive = { folderId: 'folder', videoId: 'video', thumbId: null, metaId: 'meta', backedUpAt: 5 };
+    const meta = sample();
+    meta.shot = {
+      ballSpeed: 167,
+      vla: 12,
+      hla: 1.2,
+      spin: 2600,
+      spinAxis: null,
+      sideSpin: null,
+      carry: 280,
+      apex: null,
+      curve: null,
+      sources: { ballSpeed: 'screen', carry: 'typed' },
+    };
+    meta.tracer = {
+      ball: { x: 0.5, y: 0.7 },
+      target: { x: 0.52, y: 0.3 },
+      impactTime: 1.25,
+      cameraHeight: 1.5,
+      cameraDistance: 3,
+      fov: 58,
+    };
+    const parsed = parseBackup(JSON.stringify(toBackup(meta, drive)));
+    expect(parsed?.shot?.ballSpeed).toBe(167);
+    expect(parsed?.shot?.sources.carry).toBe('typed');
+    expect(parsed?.tracer?.impactTime).toBe(1.25);
+    expect(parsed?.tracer?.ball).toEqual({ x: 0.5, y: 0.7 });
+    const legacy = JSON.parse(JSON.stringify(toBackup(sample(), drive))) as Record<string, unknown>;
+    delete legacy.shot;
+    delete legacy.tracer;
+    const old = parseBackup(JSON.stringify(legacy));
+    expect(old?.club).toBe('PW');
+    expect(old?.shot).toBeNull();
+    expect(old?.tracer).toBeNull();
   });
 });

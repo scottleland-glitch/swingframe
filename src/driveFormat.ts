@@ -1,4 +1,4 @@
-import type { Drawing, DriveLink, SwingMeta, ViewAngle } from './types';
+import type { Drawing, DriveLink, Pt, ShotData, ShotField, ShotSource, SwingMeta, TracerCalibration, ViewAngle } from './types';
 import { UPLOAD_CHUNK_BYTES } from './driveConfig';
 
 export interface SwingBackupFile {
@@ -21,6 +21,8 @@ export interface SwingBackupFile {
   byteSize: number;
   drawings: Drawing[];
   drive: DriveLink;
+  shot: ShotData | null;
+  tracer: TracerCalibration | null;
 }
 
 export function uploadRanges(total: number, chunk = UPLOAD_CHUNK_BYTES): { start: number; end: number }[] {
@@ -99,6 +101,71 @@ export function toBackup(meta: SwingMeta, drive: DriveLink): SwingBackupFile {
     byteSize: meta.byteSize,
     drawings: meta.drawings,
     drive,
+    shot: meta.shot ?? null,
+    tracer: meta.tracer ?? null,
+  };
+}
+
+const SHOT_FIELDS: ShotField[] = ['ballSpeed', 'vla', 'hla', 'spin', 'spinAxis', 'sideSpin', 'carry', 'apex', 'curve'];
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function sanitizeShot(value: unknown): ShotData | null {
+  if (!value || typeof value !== 'object') return null;
+  const rec = value as Record<string, unknown>;
+  const shot: ShotData = {
+    ballSpeed: null,
+    vla: null,
+    hla: null,
+    spin: null,
+    spinAxis: null,
+    sideSpin: null,
+    carry: null,
+    apex: null,
+    curve: null,
+    sources: {},
+  };
+  let any = false;
+  for (const field of SHOT_FIELDS) {
+    const number = finiteNumber(rec[field]);
+    if (number == null) continue;
+    shot[field] = number;
+    any = true;
+  }
+  if (rec.sources && typeof rec.sources === 'object') {
+    const sources = rec.sources as Record<string, unknown>;
+    for (const field of SHOT_FIELDS) {
+      const source = sources[field];
+      if (source === 'screen' || source === 'typed' || source === 'model') shot.sources[field] = source as ShotSource;
+    }
+  }
+  return any ? shot : null;
+}
+
+function sanitizePoint(value: unknown): Pt | null {
+  if (!value || typeof value !== 'object') return null;
+  const rec = value as { x?: unknown; y?: unknown };
+  if (typeof rec.x !== 'number' || typeof rec.y !== 'number') return null;
+  if (!Number.isFinite(rec.x) || !Number.isFinite(rec.y)) return null;
+  return { x: Math.min(1, Math.max(0, rec.x)), y: Math.min(1, Math.max(0, rec.y)) };
+}
+
+function sanitizeTracer(value: unknown): TracerCalibration | null {
+  if (!value || typeof value !== 'object') return null;
+  const rec = value as Record<string, unknown>;
+  const cameraHeight = finiteNumber(rec.cameraHeight);
+  const cameraDistance = finiteNumber(rec.cameraDistance);
+  const fov = finiteNumber(rec.fov);
+  if (cameraHeight == null || cameraDistance == null || fov == null) return null;
+  return {
+    ball: sanitizePoint(rec.ball),
+    target: sanitizePoint(rec.target),
+    impactTime: finiteNumber(rec.impactTime),
+    cameraHeight,
+    cameraDistance,
+    fov,
   };
 }
 
@@ -128,6 +195,8 @@ export function parseBackup(text: string): SwingBackupFile | null {
       fileName: typeof value.fileName === 'string' ? value.fileName : 'swing.mp4',
       byteSize: typeof value.byteSize === 'number' ? value.byteSize : 0,
       drawings: Array.isArray(value.drawings) ? value.drawings : [],
+      shot: sanitizeShot(value.shot),
+      tracer: sanitizeTracer(value.tracer),
       drive: {
         folderId: typeof drive.folderId === 'string' ? drive.folderId : '',
         videoId: drive.videoId,
@@ -163,5 +232,7 @@ export function backupToSwing(file: SwingBackupFile, thumbnail: Blob | null): Sw
     drawings: file.drawings,
     drive: file.drive,
     videoKept: true,
+    shot: file.shot,
+    tracer: file.tracer,
   };
 }

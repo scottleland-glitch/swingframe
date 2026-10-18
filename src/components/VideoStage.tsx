@@ -1,6 +1,8 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { ZOOM_MAX, ZOOM_MIN } from '../constants';
 import { paint } from '../draw';
+import { paintTracer } from '../tracer/paintTracer';
+import type { TracerPoint } from '../tracer/project';
 import { uid } from '../format';
 import { exitIfNativeFullscreen, loadInlineSource, markInline, mediaErrorMessage, paintFirstFrame } from '../inlineVideo';
 import { blobWithMime, mimeAttempts } from '../videoFile';
@@ -81,6 +83,11 @@ export const VideoStage = forwardRef<
     onCommit: (next: Drawing[]) => void;
     onDraftChange?: (hasDraft: boolean) => void;
     onZoom?: (scale: number) => void;
+    calibrate?: 'ball' | 'target' | null;
+    onCalibrate?: (pt: Pt) => 'ball' | 'target' | null | void;
+    tracerPath?: TracerPoint[] | null;
+    tracerElapsed?: number | null;
+    tracerMarks?: { ball: Pt | null; target: Pt | null } | null;
   }
 >(function VideoStage(props, ref) {
   const {
@@ -102,6 +109,11 @@ export const VideoStage = forwardRef<
     onCommit,
     onDraftChange,
     onZoom,
+    calibrate = null,
+    onCalibrate,
+    tracerPath = null,
+    tracerElapsed = null,
+    tracerMarks = null,
   } = props;
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -142,6 +154,8 @@ export const VideoStage = forwardRef<
   const onCommitRef = useRef(onCommit);
   const onDraftChangeRef = useRef(onDraftChange);
   const onZoomRef = useRef(onZoom);
+  const calibrateRef = useRef(calibrate);
+  const onCalibrateRef = useRef(onCalibrate);
   const manualRef = useRef(false);
   const manualTimer = useRef<number | null>(null);
   const wakeRef = useRef<WakeLockSentinel | null>(null);
@@ -166,6 +180,8 @@ export const VideoStage = forwardRef<
   onCommitRef.current = onCommit;
   onDraftChangeRef.current = onDraftChange;
   onZoomRef.current = onZoom;
+  calibrateRef.current = calibrate;
+  onCalibrateRef.current = onCalibrate;
   layoutRef.current = layout;
 
   function flagDraft(nextDraft: Drawing | null, pts: Pt[]) {
@@ -964,7 +980,8 @@ export const VideoStage = forwardRef<
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     paint(ctx, live ?? drawings, draft, anglePts, cursor, color, layout.w, layout.h, selectedId);
-  }, [drawings, live, draft, anglePts, cursor, color, layout, selectedId]);
+    paintTracer(ctx, tracerPath, layout.w, layout.h, tracerElapsed, tracerMarks);
+  }, [drawings, live, draft, anglePts, cursor, color, layout, selectedId, tracerPath, tracerElapsed, tracerMarks]);
 
   useImperativeHandle(
     ref,
@@ -1029,6 +1046,14 @@ export const VideoStage = forwardRef<
       data-testid="stage"
       onContextMenu={(event) => event.preventDefault()}
       onPointerDown={(event) => {
+        if (calibrateRef.current) {
+          const p = normFromClient(event.clientX, event.clientY);
+          if (p && onVideo(event.clientX, event.clientY, p)) {
+            const next = onCalibrateRef.current?.(clampPt(p));
+            if (next !== undefined) calibrateRef.current = next ?? null;
+          }
+          return;
+        }
         event.currentTarget.setPointerCapture(event.pointerId);
         pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
         if (pointers.current.size >= 2) {
@@ -1118,7 +1143,13 @@ export const VideoStage = forwardRef<
         )}
         <canvas ref={canvasRef} />
       </div>
-      {gestureHint && !panMode && <div className="gesture-chip">{gestureHint}</div>}
+      {calibrate ? (
+        <div className="gesture-chip" data-testid="tracer-hint">
+          {calibrate === 'ball' ? 'Tap the ball' : 'Tap a point up the target line'}
+        </div>
+      ) : (
+        gestureHint && !panMode && <div className="gesture-chip">{gestureHint}</div>
+      )}
       {mediaError && <div className="stage-error">{mediaError}</div>}
     </div>
   );

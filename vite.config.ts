@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import type { Plugin } from 'vite';
@@ -7,6 +8,25 @@ import { defineConfig } from 'vitest/config';
 // GitHub Pages project site. Other sites on this account share the github.io
 // origin, so the app, its service worker, and its caches stay under this path.
 const BASE = '/swingframe/';
+
+// OCR runs on the phone. Copy the worker, the SIMD core, and the English
+// traineddata next to the app so nothing is fetched from a CDN at runtime.
+function stageTesseract() {
+  const root = resolve('public/tesseract');
+  rmSync(root, { recursive: true, force: true });
+  mkdirSync(resolve(root, 'lang'), { recursive: true });
+  cpSync(resolve('node_modules/tesseract.js/dist/worker.min.js'), resolve(root, 'worker.min.js'));
+  cpSync(
+    resolve('node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm.js'),
+    resolve(root, 'tesseract-core-simd-lstm.wasm.js'),
+  );
+  cpSync(
+    resolve('node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz'),
+    resolve(root, 'lang/eng.traineddata.gz'),
+  );
+}
+
+stageTesseract();
 
 // vite-plugin-pwa appends the manifest and includeAssets after Workbox applies
 // modifyURLPrefix, which would also cache those files at the github.io root.
@@ -120,7 +140,8 @@ export default defineConfig({
       },
       workbox: {
         cacheId: 'swingframe',
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,gz}'],
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         // Precache URLs from the build are root-relative. Prefix them so the
         // worker only caches this app, not the github.io origin root.
         modifyURLPrefix: {

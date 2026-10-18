@@ -799,6 +799,34 @@ textarea { resize: vertical; }
   background: var(--bg-elev);
 }
 .tool-panel .text-btn { color: #fff; }
+.tracer-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.tracer-grid { display: flex; flex-direction: column; gap: 6px; }
+.tracer-row {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+.tracer-row span { display: flex; flex-direction: column; line-height: 1.2; }
+.tracer-row em { font-style: normal; color: rgba(255, 255, 255, 0.55); font-size: 11px; }
+.tracer-row input {
+  width: 100%;
+  font-size: 16px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.tracer-slider { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.tracer-slider input { width: 100%; }
+.tracer-status { margin: 0; text-align: center; color: #f3d48a; font-size: 13px; }
 @media (min-width: 800px) {
   .compare-body { flex-direction: row; }
   .pane { border-bottom: 0; border-right: 1px solid var(--line); }

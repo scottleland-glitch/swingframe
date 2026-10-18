@@ -1,5 +1,60 @@
 export type Pt = { x: number; y: number };
 
+export type ShotField =
+  | 'ballSpeed'
+  | 'vla'
+  | 'hla'
+  | 'spin'
+  | 'spinAxis'
+  | 'sideSpin'
+  | 'carry'
+  | 'apex'
+  | 'curve';
+
+/** Where a shot number came from. Measured values are kept; the model only fills blanks. */
+export type ShotSource = 'screen' | 'typed' | 'model';
+
+/**
+ * Launch-monitor numbers in US units.
+ * HLA, spin axis, side spin, and curve are positive to the right (a fade for a right-handed golfer).
+ * Spin axis 0 is pure backspin.
+ */
+export interface ShotData {
+  ballSpeed: number | null;
+  /** Vertical launch angle, degrees. */
+  vla: number | null;
+  /** Horizontal launch angle, degrees, positive right. */
+  hla: number | null;
+  /** Total spin, rpm. */
+  spin: number | null;
+  /** Spin axis, degrees, positive fade. */
+  spinAxis: number | null;
+  /** Side spin, rpm, positive fade. */
+  sideSpin: number | null;
+  /** Carry, yards. */
+  carry: number | null;
+  /** Apex, feet. */
+  apex: number | null;
+  /** Lateral curve at landing, yards, positive right. */
+  curve: number | null;
+  sources: Partial<Record<ShotField, ShotSource>>;
+}
+
+/** Camera and timing used to draw the tracer on this swing. */
+export interface TracerCalibration {
+  ball: Pt | null;
+  /** A point on the target line, in video coordinates. Direction only, not a distance. */
+  target: Pt | null;
+  /** Impact, in seconds of the video. Null until it is detected or marked. */
+  impactTime: number | null;
+  /** Tripod height, meters. */
+  cameraHeight: number;
+  /** Distance from the ball to the camera, meters. Behind the ball down the line, or to the side when face on. */
+  cameraDistance: number;
+  /** Vertical field of view, degrees. */
+  fov: number;
+}
+
 export type ViewAngle = 'dtl' | 'face';
 
 export type Tool =
@@ -58,6 +113,10 @@ export interface SwingMeta {
   drive?: DriveLink | null;
   /** False after Free up space removes the local video. Absent means the video should still be here. */
   videoKept?: boolean;
+  /** Launch-monitor numbers for the shot tracer. */
+  shot?: ShotData | null;
+  /** Ball, target, impact, and camera nudge for the tracer. */
+  tracer?: TracerCalibration | null;
 }
 
 export type Route =

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { DRAW_COLORS, FPS_OPTIONS, SPEEDS } from '../constants';
 import { deleteSwing, getVideo, listSwings, releaseLocalVideo } from '../db';
 import { backupSwing, downloadSwingVideo } from '../driveApi';
@@ -6,13 +6,17 @@ import { DRIVE_ENABLED } from '../driveConfig';
 import { connectGoogle, googleConnected } from '../googleAuth';
 import { cx, errorMessage, formatDate, formatRate, formatScrub, formatTime, viewLabel } from '../format';
 import { withColor } from '../geometry';
-import type { SwingMeta, Tool } from '../types';
+import { detectImpactTime } from '../tracer/detect';
+import { emptyShot, simulateShot } from '../tracer/flight';
+import { defaultTracer, projectFlight } from '../tracer/project';
+import type { ShotData, SwingMeta, Tool, TracerCalibration } from '../types';
 import { useSwing } from '../useSwing';
 import { APP_VERSION } from '../version';
 import { DetailsSheet } from './DetailsSheet';
 import { Dialog } from './Dialog';
 import { Icon, type IconName } from './Icons';
 import { Scrubber } from './Scrubber';
+import { TracerPanel } from './TracerPanel';
 import { VideoStage, type VideoEngine } from './VideoStage';
 
 const HINTS: Record<Tool, string> = {
@@ -96,11 +100,94 @@ export function PlayerView({
   const [toolsOpen, setToolsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [pinch, setPinch] = useState(false);
-  const [panelPage, setPanelPage] = useState<'tools' | 'trim' | 'overlay'>('tools');
+  const [panelPage, setPanelPage] = useState<'tools' | 'trim' | 'overlay' | 'tracer'>('tools');
+  const [tracerMode, setTracerMode] = useState<'ball' | 'target' | null>(null);
+  const [shot, setShot] = useState<ShotData | null>(null);
+  const [tracerCal, setTracerCal] = useState<TracerCalibration | null>(null);
+  const [impactBusy, setImpactBusy] = useState(false);
+  const [tracerNote, setTracerNote] = useState<string | null>(null);
+  const hydratedFor = useRef<string | null>(null);
+  const tracerModeRef = useRef<'ball' | 'target' | null>(null);
+  const tracerPending = useRef<{ shot: ShotData; tracer: TracerCalibration } | null>(null);
+  const tracerTimer = useRef<number | null>(null);
   const [others, setOthers] = useState<SwingMeta[]>([]);
   const [overlayId, setOverlayId] = useState<string | null>(null);
   const [overlayBlob, setOverlayBlob] = useState<Blob | null>(null);
   const clock = useClock(stageRef);
+  const activeShot = shot ?? swing?.shot ?? emptyShot();
+  const activeCal = tracerCal ?? swing?.tracer ?? defaultTracer();
+  const shotRef = useRef(activeShot);
+  const calRef = useRef(activeCal);
+  shotRef.current = activeShot;
+  calRef.current = activeCal;
+
+  const rememberTracer = useCallback(
+    (nextShot: ShotData, nextTracer: TracerCalibration, immediate = false) => {
+      setShot(nextShot);
+      setTracerCal(nextTracer);
+      shotRef.current = nextShot;
+      calRef.current = nextTracer;
+      tracerPending.current = { shot: nextShot, tracer: nextTracer };
+      if (tracerTimer.current) window.clearTimeout(tracerTimer.current);
+      const write = () => {
+        tracerTimer.current = null;
+        const pending = tracerPending.current;
+        tracerPending.current = null;
+        if (!pending) return;
+        void patch(pending).catch(() => setPlayError('Could not save the tracer.'));
+      };
+      if (immediate) write();
+      else tracerTimer.current = window.setTimeout(write, 280);
+    },
+    [patch],
+  );
+
+  const setMode = useCallback((next: 'ball' | 'target' | null) => {
+    tracerModeRef.current = next;
+    setTracerMode(next);
+  }, []);
+
+  useEffect(() => {
+    hydratedFor.current = null;
+    setMode(null);
+  }, [id, setMode]);
+
+  useEffect(() => {
+    if (!swing || swing.id !== id) return;
+    if (hydratedFor.current === id) return;
+    hydratedFor.current = id;
+    if (tracerPending.current) return;
+    setShot(swing.shot ?? emptyShot());
+    setTracerCal(swing.tracer ?? defaultTracer());
+  }, [swing, id]);
+
+  useEffect(() => {
+    return () => {
+      if (tracerTimer.current) window.clearTimeout(tracerTimer.current);
+      const pending = tracerPending.current;
+      tracerPending.current = null;
+      if (pending) void patch(pending);
+    };
+  }, [patch]);
+
+  const tracerPath = useMemo(() => {
+    if (!swing?.view || !activeCal.ball || !activeCal.target) return null;
+    const flight = simulateShot(activeShot);
+    if (!flight) return null;
+    return projectFlight(
+      flight.samples,
+      {
+        view: swing.view,
+        height: activeCal.cameraHeight,
+        distance: activeCal.cameraDistance,
+        fov: activeCal.fov,
+      },
+      activeCal.ball,
+      activeCal.target,
+      swing.videoWidth || 9,
+      swing.videoHeight || 16,
+    );
+  }, [swing?.view, swing?.videoWidth, swing?.videoHeight, activeShot, activeCal]);
 
   useEffect(() => {
     let cancel = false;
@@ -212,6 +299,7 @@ export function PlayerView({
     setPinch(false);
     setToolsOpen(false);
     setPanelPage('tools');
+    setMode(null);
   }
 
   function cycleRate() {
@@ -352,6 +440,32 @@ export function PlayerView({
           onSelect={setSelectedId}
           onCommit={commit}
           onDraftChange={setHasDraft}
+          calibrate={tracerMode}
+          onCalibrate={(pt) => {
+            const mode = tracerModeRef.current;
+            if (mode === 'ball') {
+              rememberTracer(shotRef.current, { ...calRef.current, ball: pt }, true);
+              setMode('target');
+              return 'target';
+            }
+            if (mode === 'target') {
+              rememberTracer(shotRef.current, { ...calRef.current, target: pt }, true);
+              setMode(null);
+              return null;
+            }
+            return null;
+          }}
+          tracerPath={tracerPath}
+          tracerElapsed={
+            tracerMode != null || (toolsOpen && panelPage === 'tracer') || activeCal.impactTime == null
+              ? null
+              : Math.max(0, clock.time - (activeCal.impactTime ?? 0))
+          }
+          tracerMarks={
+            tracerMode != null || (toolsOpen && panelPage === 'tracer')
+              ? { ball: activeCal.ball, target: activeCal.target }
+              : null
+          }
         />
       </div>
 
@@ -496,6 +610,13 @@ export function PlayerView({
                     testId="edit-overlay"
                     onClick={() => setPanelPage('overlay')}
                   />
+                  <ToolButton
+                    icon="tracer"
+                    label="Tracer"
+                    pressed={Boolean(activeCal.ball && activeShot.ballSpeed != null)}
+                    testId="edit-tracer"
+                    onClick={() => setPanelPage('tracer')}
+                  />
                 </div>
                 <h2>Draw Tools</h2>
                 <p className="panel-hint">{HINTS[tool]}</p>
@@ -588,6 +709,44 @@ export function PlayerView({
               </div>
             )}
 
+            {panelPage === 'tracer' && (
+              <TracerPanel
+                view={swing.view}
+                shot={activeShot}
+                tracer={activeCal}
+                busy={impactBusy}
+                note={tracerNote}
+                onShot={(next) => rememberTracer(next, calRef.current, true)}
+                onTracer={(next) => rememberTracer(shotRef.current, next)}
+                onDetect={() => {
+                  setImpactBusy(true);
+                  setTracerNote(null);
+                  void detectImpactTime(blob, calRef.current.ball)
+                    .then((time) => {
+                      if (time == null) {
+                        setTracerNote('Could not find the hit. Step to that frame and tap Mark impact.');
+                        return;
+                      }
+                      rememberTracer(shotRef.current, { ...calRef.current, impactTime: time }, true);
+                      stageRef.current?.pause();
+                      stageRef.current?.seek(time);
+                    })
+                    .catch(() => setTracerNote('Could not find the hit. Step to that frame and tap Mark impact.'))
+                    .finally(() => setImpactBusy(false));
+                }}
+                onMarkImpact={() => {
+                  const time = stageRef.current?.getTime() ?? 0;
+                  rememberTracer(shotRef.current, { ...calRef.current, impactTime: time }, true);
+                  setTracerNote(null);
+                }}
+                onCalibrate={(which) => {
+                  setMode(which);
+                  setToolsOpen(false);
+                }}
+                onBack={() => setPanelPage('tools')}
+              />
+            )}
+
             {panelPage === 'overlay' && (
               <div className="panel-page">
                 <h2>Overlay</h2>
@@ -650,7 +809,8 @@ export function PlayerView({
           <div className="sheet-body">
             <p className="tip">
               The video stays on this page. Place a drawing with two fingers. Undo and Clear all are on the white bar.
-              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows.
+              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. Tracer, in the wrench,
+              draws the ball flight from a Foresight screenshot or from numbers you type.
             </p>
             {swing.notes ? <p className="note-block">{swing.notes}</p> : null}
             <div className="fps-row" role="group" aria-label="Frame step size">
