@@ -1,0 +1,254 @@
+import { angleArc, angleDegrees, extendLine } from './geometry';
+import type { Drawing, Pt } from './types';
+
+function hexToRgba(hex: string, alpha: number): string {
+  const n = hex.replace('#', '');
+  const r = Number.parseInt(n.slice(0, 2), 16);
+  const g = Number.parseInt(n.slice(2, 4), 16);
+  const b = Number.parseInt(n.slice(4, 6), 16);
+  if ([r, g, b].some((v) => Number.isNaN(v))) return `rgba(255,255,255,${alpha})`;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function roundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+}
+
+function strokeInk(ctx: CanvasRenderingContext2D, color: string, width: number, dashed = false) {
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.setLineDash(dashed ? [7, 6] : []);
+  ctx.strokeStyle = 'rgba(0,0,0,0.72)';
+  ctx.lineWidth = width + 2.6;
+  ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function dot(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, radius: number) {
+  ctx.beginPath();
+  ctx.arc(x, y, radius + 1.4, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function paintAngleLabel(
+  ctx: CanvasRenderingContext2D,
+  a: Pt,
+  v: Pt,
+  b: Pt,
+  color: string,
+  w: number,
+  h: number,
+) {
+  const arc = angleArc(a, v, b, w, h);
+  if (!arc) return;
+  const vx = v.x * w;
+  const vy = v.y * h;
+  ctx.beginPath();
+  ctx.arc(vx, vy, 26, arc.start, arc.start + arc.sweep, arc.sweep < 0);
+  strokeInk(ctx, color, 1.6);
+
+  const deg = angleDegrees(a, v, b, w, h);
+  const label = `${deg.toFixed(1)}°`;
+  const bis = arc.start + arc.sweep / 2;
+  let lx = vx + Math.cos(bis) * 44;
+  let ly = vy + Math.sin(bis) * 44;
+  ctx.font = '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  const tw = ctx.measureText(label).width;
+  lx = Math.min(w - tw / 2 - 8, Math.max(tw / 2 + 8, lx));
+  ly = Math.min(h - 14, Math.max(14, ly));
+  roundedRect(ctx, lx - tw / 2 - 7, ly - 11, tw + 14, 22, 7);
+  ctx.fillStyle = 'rgba(8,12,10,0.82)';
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, lx, ly);
+}
+
+function paintOne(ctx: CanvasRenderingContext2D, d: Drawing, w: number, h: number, selected: boolean) {
+  const color = d.color;
+  const width = selected ? 3 : 2.25;
+
+  switch (d.type) {
+    case 'line': {
+      const ax = d.a.x * w;
+      const ay = d.a.y * h;
+      const bx = d.b.x * w;
+      const by = d.b.y * h;
+      const ext = extendLine(ax, ay, bx, by, w, h);
+      if (ext) {
+        ctx.beginPath();
+        ctx.moveTo(ext[0].x, ext[0].y);
+        ctx.lineTo(ext[1].x, ext[1].y);
+        strokeInk(ctx, hexToRgba(color, 0.55), 1.25, true);
+      }
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      strokeInk(ctx, color, width);
+      dot(ctx, ax, ay, color, selected ? 5 : 4);
+      dot(ctx, bx, by, color, selected ? 5 : 4);
+      break;
+    }
+    case 'pen': {
+      if (d.points.length === 0) break;
+      ctx.beginPath();
+      d.points.forEach((p, i) => {
+        const x = p.x * w;
+        const y = p.y * h;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      strokeInk(ctx, color, width);
+      break;
+    }
+    case 'angle': {
+      const ax = d.a.x * w;
+      const ay = d.a.y * h;
+      const vx = d.v.x * w;
+      const vy = d.v.y * h;
+      const bx = d.b.x * w;
+      const by = d.b.y * h;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(vx, vy);
+      ctx.lineTo(bx, by);
+      strokeInk(ctx, color, width);
+      dot(ctx, ax, ay, color, 4);
+      dot(ctx, vx, vy, color, 5);
+      dot(ctx, bx, by, color, 4);
+      paintAngleLabel(ctx, d.a, d.v, d.b, color, w, h);
+      break;
+    }
+    case 'circle': {
+      const cx = d.c.x * w;
+      const cy = d.c.y * h;
+      const r = Math.max(1, d.r * w);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = hexToRgba(color, 0.12);
+      ctx.fill();
+      strokeInk(ctx, color, width);
+      dot(ctx, cx, cy, color, 3.5);
+      if (selected) dot(ctx, cx + r, cy, '#ffffff', 4);
+      break;
+    }
+    case 'box': {
+      const x = d.x * w;
+      const y = d.y * h;
+      const bw = d.w * w;
+      const bh = d.h * h;
+      ctx.beginPath();
+      ctx.rect(x, y, bw, bh);
+      ctx.fillStyle = hexToRgba(color, 0.1);
+      ctx.fill();
+      strokeInk(ctx, color, width);
+      break;
+    }
+    case 'hline': {
+      const y = d.y * h;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      strokeInk(ctx, color, 1.6, true);
+      break;
+    }
+    case 'vline': {
+      const x = d.x * w;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      strokeInk(ctx, color, 1.6, true);
+      break;
+    }
+    default: {
+      const never: never = d;
+      void never;
+    }
+  }
+
+  if (!selected) return;
+  if (d.type === 'box') {
+    const x = d.x * w;
+    const y = d.y * h;
+    const bw = d.w * w;
+    const bh = d.h * h;
+    for (const [hx, hy] of [
+      [x, y],
+      [x + bw, y],
+      [x, y + bh],
+      [x + bw, y + bh],
+    ]) {
+      dot(ctx, hx, hy, '#ffffff', 4);
+    }
+  }
+}
+
+export function paint(
+  ctx: CanvasRenderingContext2D,
+  drawings: Drawing[],
+  draft: Drawing | null,
+  anglePts: Pt[],
+  cursor: Pt | null,
+  color: string,
+  w: number,
+  h: number,
+  selectedId: string | null,
+) {
+  ctx.clearRect(0, 0, w, h);
+  const selected = drawings.find((d) => d.id === selectedId) ?? null;
+  for (const d of drawings) {
+    if (d.id === selectedId) continue;
+    paintOne(ctx, d, w, h, false);
+  }
+  if (selected) paintOne(ctx, selected, w, h, true);
+  if (draft) paintOne(ctx, draft, w, h, false);
+
+  if (anglePts.length === 0) return;
+  const a = anglePts[0];
+  if (anglePts.length === 1) {
+    dot(ctx, a.x * w, a.y * h, color, 5);
+    if (cursor) {
+      ctx.beginPath();
+      ctx.moveTo(a.x * w, a.y * h);
+      ctx.lineTo(cursor.x * w, cursor.y * h);
+      strokeInk(ctx, color, 2);
+    }
+    return;
+  }
+  const vertex = anglePts[1];
+  if (cursor) {
+    const preview: Drawing = {
+      id: 'preview',
+      type: 'angle',
+      color,
+      a,
+      v: vertex,
+      b: cursor,
+    };
+    paintOne(ctx, preview, w, h, false);
+    return;
+  }
+  ctx.beginPath();
+  ctx.moveTo(a.x * w, a.y * h);
+  ctx.lineTo(vertex.x * w, vertex.y * h);
+  strokeInk(ctx, color, 2.25);
+  dot(ctx, a.x * w, a.y * h, color, 4);
+  dot(ctx, vertex.x * w, vertex.y * h, color, 5);
+}
