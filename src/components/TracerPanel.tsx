@@ -41,8 +41,6 @@ export function TracerPanel({
   onCalibrate,
   onClear,
   canClear,
-  showAim,
-  onToggleAim,
   exporting,
   onExport,
   onBack,
@@ -59,8 +57,6 @@ export function TracerPanel({
   onCalibrate: (which: 'ball' | 'target') => void;
   onClear: () => void;
   canClear: boolean;
-  showAim: boolean;
-  onToggleAim: () => void;
   exporting: boolean;
   onExport: () => void;
   onBack: () => void;
@@ -72,6 +68,8 @@ export function TracerPanel({
   const [pendingSide, setPendingSide] = useState<Partial<Record<ShotField, -1 | 1>>>({});
   const flight = useMemo(() => simulateShot(shot), [shot]);
   const locked = tracer.locked === true;
+  const showAim = tracer.showAim === true;
+  const showTracer = tracer.showTracer !== false;
 
   function sideFor(field: ShotField): -1 | 1 | 0 {
     const value = shot[field];
@@ -240,8 +238,23 @@ export function TracerPanel({
       </p>
       </fieldset>
       <div className="panel-actions">
-        <button type="button" className="btn" data-testid="tracer-show-aim" aria-pressed={showAim} onClick={onToggleAim}>
+        <button
+          type="button"
+          className="btn"
+          data-testid="tracer-show-aim"
+          aria-pressed={showAim}
+          onClick={() => onTracer({ ...tracer, showAim: !showAim })}
+        >
           {showAim ? 'Hide aim point' : 'Show aim point'}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          data-testid="tracer-show-line"
+          aria-pressed={showTracer}
+          onClick={() => onTracer({ ...tracer, showTracer: !showTracer })}
+        >
+          {showTracer ? 'Hide tracer' : 'Show tracer'}
         </button>
         <button
           type="button"
@@ -257,7 +270,7 @@ export function TracerPanel({
         {locked
           ? 'Locked. The ball, aim, impact, numbers, and camera sliders stay put until you unlock.'
           : 'Lock freezes the tracer so nothing moves by accident.'}{' '}
-        Show aim point draws the ball, the aim point, and the white aim line. They stay hidden during playback unless this is on.
+        Show aim point draws the ball, the aim point, and the white aim line. Show tracer is the flight line. The same switches sit on the picture, including in full screen, and they are saved with this swing.
       </p>
       <fieldset className="tracer-lock" disabled={locked}>
       <div className="panel-actions">

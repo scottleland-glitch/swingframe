@@ -187,5 +187,7 @@ export function defaultTracer(): TracerCalibration {
     cameraDistance: 3.5,
     fov: 60,
     locked: false,
+    showAim: false,
+    showTracer: true,
   };
 }

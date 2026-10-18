@@ -36,7 +36,11 @@ export type IconName =
   | 'overlay'
   | 'tracer'
   | 'erase'
-  | 'help';
+  | 'help'
+  | 'draw'
+  | 'crosshair'
+  | 'lock'
+  | 'unlock';
 
 export function Icon({ name }: { name: IconName }) {
   return (
@@ -265,6 +269,35 @@ function paths(name: IconName) {
           <circle cx="12" cy="12" r="8" />
           <path d="M9.5 9.5a2.5 2.5 0 1 1 3.2 2.4c-.7.3-1.2.8-1.2 1.6" />
           <path d="M12 17h.01" />
+        </>
+      );
+    case 'draw':
+      return (
+        <>
+          <path d="M14.2 3.6 19.8 9.2l-6.6 6.6-5.4.8.8-5.4 5.6-7.6Z" />
+          <path d="M12.8 5 18.2 10.4" />
+          <path d="M3 19.4c1.6-1.5 2.2.6 3.6-.2 1.2-.7 1.7.9 3.1.1 1.3-.8 1.9.8 3.3 0" />
+        </>
+      );
+    case 'crosshair':
+      return (
+        <>
+          <circle cx="12" cy="12" r="5.25" />
+          <path d="M12 2.25v3.5M12 18.25v3.5M2.25 12h3.5M18.25 12h3.5" />
+        </>
+      );
+    case 'lock':
+      return (
+        <>
+          <rect x="5" y="11" width="14" height="9" rx="1.6" />
+          <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+        </>
+      );
+    case 'unlock':
+      return (
+        <>
+          <rect x="5" y="11" width="14" height="9" rx="1.6" />
+          <path d="M8 11V8a4 4 0 0 1 7.6-1.4" />
         </>
       );
     default: {

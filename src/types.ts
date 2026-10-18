@@ -65,6 +65,10 @@ export interface TracerCalibration {
   fov: number;
   /** When set, ball, aim, impact, numbers, and camera sliders do not change. */
   locked?: boolean;
+  /** Ball, aim point, and aim line. Off unless this swing saved them on. */
+  showAim?: boolean;
+  /** Flight line. Missing or true shows it, so an older swing keeps its tracer. */
+  showTracer?: boolean;
 }
 
 export type ViewAngle = 'dtl' | 'face';

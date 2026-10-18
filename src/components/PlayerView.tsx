@@ -103,13 +103,12 @@ export function PlayerView({
   const [toolsOpen, setToolsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [pinch, setPinch] = useState(false);
-  const [panelPage, setPanelPage] = useState<'tools' | 'trim' | 'overlay' | 'tracer'>('tools');
+  const [panelPage, setPanelPage] = useState<'draw' | 'edit' | 'trim' | 'overlay' | 'tracer'>('draw');
   const [tracerMode, setTracerMode] = useState<'ball' | 'target' | null>(null);
   const [shot, setShot] = useState<ShotData | null>(null);
   const [tracerCal, setTracerCal] = useState<TracerCalibration | null>(null);
   const [impactBusy, setImpactBusy] = useState(false);
   const [tracerNote, setTracerNote] = useState<string | null>(null);
-  const [showAim, setShowAim] = useState(false);
   const [immersive, setImmersive] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
@@ -194,7 +193,6 @@ export function PlayerView({
     setTracerUndoReady(false);
     setTracerEngaged(false);
     setConfirmTracer(false);
-    setShowAim(false);
     setImmersive(false);
     exportAbort.current?.abort();
   }, [id, setMode]);
@@ -396,11 +394,27 @@ export function PlayerView({
   }, [pastCount, restoreTracer, undo]);
 
   const markImpact = useCallback(() => {
+    if (calRef.current.locked) return;
     const time = stageRef.current?.getTime() ?? 0;
     rememberTracer(shotRef.current, { ...calRef.current, impactTime: time }, true);
     setTracerNote(null);
     setTracerEngaged(true);
   }, [rememberTracer]);
+
+  const toggleAim = useCallback(() => {
+    rememberTracer(shotRef.current, { ...calRef.current, showAim: calRef.current.showAim !== true }, true);
+  }, [rememberTracer]);
+
+  const toggleTracerLine = useCallback(() => {
+    const showing = calRef.current.showTracer !== false;
+    rememberTracer(shotRef.current, { ...calRef.current, showTracer: !showing }, true);
+  }, [rememberTracer]);
+
+  const toggleLock = useCallback(() => {
+    const next = { ...calRef.current, locked: calRef.current.locked !== true };
+    if (next.locked) setMode(null);
+    rememberTracer(shotRef.current, next, true);
+  }, [rememberTracer, setMode]);
 
   const clearTracer = useCallback(() => {
     const prevShot = shotRef.current;
@@ -479,8 +493,18 @@ export function PlayerView({
     setTool(next);
     setPinch(false);
     setToolsOpen(false);
-    setPanelPage('tools');
+    setPanelPage('draw');
     setMode(null);
+  }
+
+  function openMenu(page: 'draw' | 'edit' | 'tracer') {
+    if (page === 'tracer') setTracerEngaged(true);
+    if (toolsOpen && panelPage === page) {
+      setToolsOpen(false);
+      return;
+    }
+    setPanelPage(page);
+    setToolsOpen(true);
   }
 
   function cycleRate() {
@@ -609,14 +633,14 @@ export function PlayerView({
     void recordTracerVideo({
       blob,
       drawings,
-      tracerPath,
       impactTime: activeCal.impactTime,
       flightTime: tracerFlight,
       clipStart: trimIn ?? 0,
       clipEnd: trimOut ?? swing.duration ?? 0,
       videoWidth: swing.videoWidth || 0,
       videoHeight: swing.videoHeight || 0,
-      marks: showAim ? { ball: activeCal.ball, target: activeCal.target } : null,
+      marks: activeCal.showAim === true ? { ball: activeCal.ball, target: activeCal.target } : null,
+      tracerPath: activeCal.showTracer !== false ? tracerPath : null,
       signal: controller.signal,
       onProgress: (fraction) => setExportProgress(fraction),
     })
@@ -683,10 +707,14 @@ export function PlayerView({
             }
             return null;
           }}
-          tracerPath={tuningTracer || activeCal.impactTime != null ? tracerPath : null}
+          tracerPath={
+            activeCal.showTracer !== false && (tuningTracer || activeCal.impactTime != null) ? tracerPath : null
+          }
           tracerElapsed={tracerElapsed}
           tracerMarks={
-            showAim || tracerMode != null ? { ball: activeCal.ball, target: activeCal.target } : null
+            activeCal.showAim === true || tracerMode != null
+              ? { ball: activeCal.ball, target: activeCal.target }
+              : null
           }
         />
       </div>
@@ -721,11 +749,43 @@ export function PlayerView({
         <Icon name="help" />
       </button>
 
-      {pinch && <p className="pinch-banner">Drag to pan. Use two fingers to zoom. Open the wrench to draw.</p>}
+      {showImpactChip && (
+        <div className="tracer-quick" data-testid="tracer-quick">
+          <button
+            type="button"
+            aria-label="Show aim point"
+            aria-pressed={activeCal.showAim === true}
+            data-testid="quick-aim"
+            onClick={toggleAim}
+          >
+            <Icon name="crosshair" />
+          </button>
+          <button
+            type="button"
+            aria-label="Show tracer"
+            aria-pressed={activeCal.showTracer !== false}
+            data-testid="quick-tracer"
+            onClick={toggleTracerLine}
+          >
+            <Icon name="tracer" />
+          </button>
+          <button
+            type="button"
+            aria-label={activeCal.locked ? 'Unlock tracer' : 'Lock tracer'}
+            aria-pressed={activeCal.locked === true}
+            data-testid="quick-lock"
+            onClick={toggleLock}
+          >
+            <Icon name={activeCal.locked ? 'lock' : 'unlock'} />
+          </button>
+        </div>
+      )}
+
+      {pinch && <p className="pinch-banner">Drag to pan. Use two fingers to zoom. Tap the pencil to draw.</p>}
       {(saveError || playError) && <p className="player-banner">{saveError || playError}</p>}
 
       <div className="player-bar" ref={setBarNode}>
-        {showImpactChip && (
+        {showImpactChip && activeCal.locked !== true && (
           <button type="button" className="tracer-impact-chip" data-testid="set-impact-bar" onClick={markImpact}>
             Set impact time
             {activeCal.impactTime != null && <small>{formatTime(activeCal.impactTime)}</small>}
@@ -756,7 +816,7 @@ export function PlayerView({
             aria-label="Current drawing color"
             style={{ background: color }}
             onClick={() => {
-              setPanelPage('tools');
+              setPanelPage('draw');
               setToolsOpen(true);
             }}
           />
@@ -784,16 +844,6 @@ export function PlayerView({
           </button>
           <button
             type="button"
-            className="bar-icon bar-clear"
-            aria-label="Clear all"
-            data-testid="bar-clear"
-            disabled={!canClear}
-            onClick={() => setConfirmClear(true)}
-          >
-            <Icon name="clear" />
-          </button>
-          <button
-            type="button"
             className="bar-icon bar-undo"
             aria-label="Undo"
             data-testid="bar-undo"
@@ -804,14 +854,31 @@ export function PlayerView({
           </button>
           <button
             type="button"
-            className={cx('bar-icon bar-wrench', toolsOpen && 'is-on')}
-            aria-label="Tools"
-            aria-pressed={toolsOpen}
+            className={cx('bar-icon', toolsOpen && panelPage === 'draw' && 'is-on')}
+            aria-label="Drawing tools"
+            aria-pressed={toolsOpen && panelPage === 'draw'}
+            data-testid="draw-toggle"
+            onClick={() => openMenu('draw')}
+          >
+            <Icon name="draw" />
+          </button>
+          <button
+            type="button"
+            className={cx('bar-icon bar-tracer', toolsOpen && panelPage === 'tracer' && 'is-on')}
+            aria-label="Tracer"
+            aria-pressed={toolsOpen && panelPage === 'tracer'}
+            data-testid="tracer-toggle"
+            onClick={() => openMenu('tracer')}
+          >
+            <Icon name="tracer" />
+          </button>
+          <button
+            type="button"
+            className={cx('bar-icon bar-wrench', toolsOpen && (panelPage === 'edit' || panelPage === 'trim' || panelPage === 'overlay') && 'is-on')}
+            aria-label="Edit tools"
+            aria-pressed={toolsOpen && (panelPage === 'edit' || panelPage === 'trim' || panelPage === 'overlay')}
             data-testid="tools-toggle"
-            onClick={() => {
-              setPanelPage('tools');
-              setToolsOpen((open) => !open);
-            }}
+            onClick={() => openMenu('edit')}
           >
             <Icon name="wrench" />
           </button>
@@ -826,57 +893,14 @@ export function PlayerView({
             if (event.target === event.currentTarget) setToolsOpen(false);
           }}
         >
-          <div className="tool-panel" role="dialog" aria-label="Edit tools">
-            {panelPage === 'tools' && (
+          <div
+            className="tool-panel"
+            role="dialog"
+            aria-label={panelPage === 'draw' ? 'Drawing tools' : panelPage === 'tracer' ? 'Tracer' : 'Edit tools'}
+          >
+            {panelPage === 'draw' && (
               <>
-                <h2>Edit Tools</h2>
-                <div className="tool-grid">
-                  <ToolButton
-                    icon="flip"
-                    label="Flip"
-                    pressed={mirrored}
-                    testId="edit-flip"
-                    onClick={() => {
-                      void patch({ mirrored: !mirrored }).catch(() => setPlayError('Could not save the flip.'));
-                    }}
-                  />
-                  <ToolButton
-                    icon="trim"
-                    label="Trim"
-                    pressed={trimIn != null || trimOut != null}
-                    testId="edit-trim"
-                    onClick={() => setPanelPage('trim')}
-                  />
-                  <ToolButton
-                    icon="pinch"
-                    label="Pinch"
-                    pressed={pinch}
-                    testId="edit-pinch"
-                    onClick={() => {
-                      setPinch((value) => !value);
-                      setToolsOpen(false);
-                    }}
-                  />
-                  <ToolButton icon="compare" label="Compare" testId="edit-compare" onClick={() => onCompare(swing.id)} />
-                  <ToolButton
-                    icon="overlay"
-                    label="Overlay"
-                    pressed={overlayBlob != null}
-                    testId="edit-overlay"
-                    onClick={() => setPanelPage('overlay')}
-                  />
-                  <ToolButton
-                    icon="tracer"
-                    label="Tracer"
-                    pressed={Boolean(activeCal.ball && activeShot.ballSpeed != null)}
-                    testId="edit-tracer"
-                    onClick={() => {
-                      setTracerEngaged(true);
-                      setPanelPage('tracer');
-                    }}
-                  />
-                </div>
-                <h2>Draw Tools</h2>
+                <h2>Drawing</h2>
                 <p className="panel-hint">{HINTS[tool]}</p>
                 <div className="tool-grid">
                   {DRAW_TOOLS.map((item) => (
@@ -922,6 +946,48 @@ export function PlayerView({
               </>
             )}
 
+            {panelPage === 'edit' && (
+              <>
+                <h2>Edit</h2>
+                <div className="tool-grid">
+                  <ToolButton
+                    icon="flip"
+                    label="Flip"
+                    pressed={mirrored}
+                    testId="edit-flip"
+                    onClick={() => {
+                      void patch({ mirrored: !mirrored }).catch(() => setPlayError('Could not save the flip.'));
+                    }}
+                  />
+                  <ToolButton
+                    icon="trim"
+                    label="Trim"
+                    pressed={trimIn != null || trimOut != null}
+                    testId="edit-trim"
+                    onClick={() => setPanelPage('trim')}
+                  />
+                  <ToolButton
+                    icon="pinch"
+                    label="Pinch"
+                    pressed={pinch}
+                    testId="edit-pinch"
+                    onClick={() => {
+                      setPinch((value) => !value);
+                      setToolsOpen(false);
+                    }}
+                  />
+                  <ToolButton icon="compare" label="Compare" testId="edit-compare" onClick={() => onCompare(swing.id)} />
+                  <ToolButton
+                    icon="overlay"
+                    label="Overlay"
+                    pressed={overlayBlob != null}
+                    testId="edit-overlay"
+                    onClick={() => setPanelPage('overlay')}
+                  />
+                </div>
+              </>
+            )}
+
             {panelPage === 'trim' && (
               <div className="panel-page">
                 <h2>Trim</h2>
@@ -961,7 +1027,7 @@ export function PlayerView({
                     Clear
                   </button>
                 </div>
-                <button type="button" className="text-btn" onClick={() => setPanelPage('tools')}>
+                <button type="button" className="text-btn" onClick={() => setPanelPage('edit')}>
                   Back
                 </button>
               </div>
@@ -977,7 +1043,12 @@ export function PlayerView({
                 onShot={(next) => rememberTracer(next, calRef.current, true)}
                 onTracer={(next) => {
                   if (next.locked) setMode(null);
-                  rememberTracer(shotRef.current, next, Boolean(next.locked) !== Boolean(calRef.current.locked));
+                  const prev = calRef.current;
+                  const immediate =
+                    Boolean(next.locked) !== Boolean(prev.locked) ||
+                    (next.showAim === true) !== (prev.showAim === true) ||
+                    (next.showTracer !== false) !== (prev.showTracer !== false);
+                  rememberTracer(shotRef.current, next, immediate);
                 }}
                 onDetect={() => {
                   setImpactBusy(true);
@@ -999,8 +1070,6 @@ export function PlayerView({
                 onMarkImpact={markImpact}
                 onClear={() => setConfirmTracer(true)}
                 canClear={tracerIsSet(activeShot, activeCal)}
-                showAim={showAim}
-                onToggleAim={() => setShowAim((value) => !value)}
                 exporting={exporting}
                 onExport={startExport}
                 onCalibrate={(which) => {
@@ -1008,7 +1077,7 @@ export function PlayerView({
                   setMode(which);
                   setToolsOpen(false);
                 }}
-                onBack={() => setPanelPage('tools')}
+                onBack={() => setToolsOpen(false)}
               />
             )}
 
@@ -1027,7 +1096,7 @@ export function PlayerView({
                       onClick={() => {
                         setOverlayId(other.id);
                         setToolsOpen(false);
-                        setPanelPage('tools');
+                        setPanelPage('edit');
                       }}
                     >
                       <strong>{other.club || 'Swing'}</strong>
@@ -1049,7 +1118,7 @@ export function PlayerView({
                     Remove overlay
                   </button>
                 )}
-                <button type="button" className="text-btn" onClick={() => setPanelPage('tools')}>
+                <button type="button" className="text-btn" onClick={() => setPanelPage('edit')}>
                   Back
                 </button>
               </div>
@@ -1073,10 +1142,9 @@ export function PlayerView({
           </header>
           <div className="sheet-body">
             <p className="tip">
-              The video stays on this page. Place a drawing with two fingers. Undo and Clear all are on the white bar.
-              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. Tracer, in the wrench,
-              draws the ball flight from a Foresight screenshot or from numbers you type. Pause on impact and tap Set impact time
-              on the bar. Clear tracer removes the line. Undo puts it back.
+              The video stays on this page. Tap the pencil for drawing tools. Place a drawing with two fingers. Undo is on the white bar, and Clear all is in the drawing menu.
+              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon opens the ball flight.
+              Pause on impact and tap Set impact time on the bar. That button hides while the tracer is locked. Clear tracer removes the line. Undo puts it back.
             </p>
             {swing.notes ? <p className="note-block">{swing.notes}</p> : null}
             <div className="fps-row" role="group" aria-label="Frame step size">

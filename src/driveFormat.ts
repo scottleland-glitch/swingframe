@@ -183,6 +183,8 @@ function sanitizeTracer(value: unknown): TracerCalibration | null {
     cameraDistance,
     fov,
     locked: rec.locked === true,
+    showAim: rec.showAim === true,
+    showTracer: rec.showTracer !== false,
   };
 }
 

@@ -806,21 +806,66 @@ textarea { resize: vertical; }
 }
 .trim-readout { margin-left: auto; color: #666; font-size: 12px; font-variant-numeric: tabular-nums; }
 .bar-icon {
-  width: 48px;
-  height: 48px;
-  min-width: 44px;
+  width: 44px;
+  height: 44px;
+  min-width: 0;
   min-height: 44px;
+  flex: 1 1 0;
+  max-width: 52px;
   display: grid;
   place-items: center;
   color: #111;
   border-radius: 12px;
 }
-.bar-icon .icon { width: 26px; height: 26px; stroke-width: 1.7; }
+.bar-icon .icon { width: 24px; height: 24px; stroke-width: 1.7; }
 .bar-icon:disabled { opacity: 0.28; }
-.bar-play .icon { width: 30px; height: 30px; }
-.bar-clear { margin-left: auto; }
+.bar-play .icon { width: 28px; height: 28px; }
 .panel-clear { width: 100%; margin-top: 10px; }
-.bar-wrench.is-on { background: rgba(0, 0, 0, 0.08); }
+.bar-icon.is-on { background: rgba(0, 0, 0, 0.08); }
+.bar-tracer .icon {
+  color: #1aa7e8;
+  filter: drop-shadow(0 0 1px #7ad4ff) drop-shadow(0 0 3px rgba(40, 170, 255, 0.95));
+}
+.tracer-quick {
+  position: absolute;
+  z-index: 7;
+  right: calc(8px + var(--safe-right));
+  top: calc(104px + var(--safe-top));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(16, 20, 18, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+}
+.tracer-quick button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.38);
+}
+.tracer-quick button[aria-pressed='true'] {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+}
+.tracer-quick .icon { width: 20px; height: 20px; }
+.tracer-quick [data-testid='quick-tracer'] .icon {
+  color: rgba(160, 220, 255, 0.4);
+  filter: none;
+}
+.tracer-quick [data-testid='quick-tracer'][aria-pressed='true'] .icon {
+  color: #eaf7ff;
+  filter: drop-shadow(0 0 2px #8fd8ff) drop-shadow(0 0 5px rgba(60, 180, 255, 0.95));
+}
 .tool-backdrop {
   position: absolute;
   z-index: 8;

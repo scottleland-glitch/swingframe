@@ -218,8 +218,16 @@ export async function recordTracerVideo(request: ExportRequest): Promise<ExportR
         ctx.save();
         ctx.scale(size.w / viewW, size.h / viewH);
         paint(ctx, request.drawings, null, [], null, '#ffffff', viewW, viewH, null, false);
-        if (request.tracerPath && request.impactTime != null) {
-          paintTracer(ctx, request.tracerPath, viewW, viewH, tracerPlayhead(t, request.impactTime, request.flightTime), request.marks);
+        const drawLine = Boolean(request.tracerPath && request.impactTime != null);
+        if (drawLine || request.marks) {
+          paintTracer(
+            ctx,
+            drawLine ? request.tracerPath : null,
+            viewW,
+            viewH,
+            drawLine ? tracerPlayhead(t, request.impactTime, request.flightTime) : null,
+            request.marks,
+          );
         }
         ctx.restore();
         const length = Math.max(0.001, span.end - span.start);
