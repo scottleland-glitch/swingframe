@@ -263,9 +263,29 @@ describe('camera projection', () => {
     const fade = driver(8)!;
     const fadeRays = imageRays(projectFlight(fade.samples, camera, ball, target, width, height), ball, target, width, height);
     const fadeLanding = fadeRays.at(-1)!;
-    expect(Math.abs(fadeLanding.across)).toBeLessThan(1.5);
-    expect(Math.max(...fadeRays.map((ray) => Math.abs(ray.across)))).toBeGreaterThan(6);
+    expect(fadeLanding.across).toBeGreaterThan(6);
     expect(Math.max(...fadeRays.map((ray) => ray.along))).toBeGreaterThan(fadeLanding.along + 15);
+    const straightPeak = Math.max(...rays.map((ray) => ray.along));
+    const fadePeak = Math.max(...fadeRays.map((ray) => ray.along));
+    expect(fadePeak).toBeGreaterThan(straightPeak * 0.75);
+  });
+
+  it('starts a push-draw right of the aim line and lands it left, without pulling a straight shot off the line', () => {
+    const straight = driver(0, 0)!;
+    const draw = driver(-8, 1)!;
+    expect(straight.curveYd).toBeGreaterThan(-1);
+    expect(straight.curveYd).toBeLessThan(1);
+    expect(draw.curveYd).toBeLessThan(-2);
+    const straightRays = imageRays(projectFlight(straight.samples, camera, ball, target, width, height), ball, target, width, height);
+    const drawRays = imageRays(projectFlight(draw.samples, camera, ball, target, width, height), ball, target, width, height);
+    expect(Math.abs(straightRays.at(-1)!.across)).toBeLessThan(1.5);
+    const started = drawRays.find((ray) => ray.t >= 0.2)!;
+    expect(started.across).toBeGreaterThan(0.5);
+    expect(drawRays.at(-1)!.across).toBeLessThan(-4);
+    const straightPeak = Math.max(...straightRays.map((ray) => ray.along));
+    const drawPeak = Math.max(...drawRays.map((ray) => ray.along));
+    expect(drawPeak).toBeGreaterThan(straightPeak * 0.75);
+    expect(Math.abs(draw.apexFt - straight.apexFt)).toBeLessThan(15);
   });
 
   it('foreshortens the ground and still descends from another ball position and face on', () => {

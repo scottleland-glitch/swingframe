@@ -53,7 +53,7 @@ export interface ShotData {
 /** Camera and timing used to draw the tracer on this swing. */
 export interface TracerCalibration {
   ball: Pt | null;
-  /** A point on the target line, in video coordinates. Direction only, not a distance. */
+  /** A point on the aim line, in video coordinates. Direction of the intended line only, not the landing. */
   target: Pt | null;
   /** Impact, in seconds of the video. Null until it is detected or marked. */
   impactTime: number | null;

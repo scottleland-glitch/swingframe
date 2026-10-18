@@ -1158,7 +1158,7 @@ export const VideoStage = forwardRef<
       </div>
       {calibrate ? (
         <div className="gesture-chip" data-testid="tracer-hint">
-          {calibrate === 'ball' ? 'Tap the ball' : 'Tap a point up the target line'}
+          {calibrate === 'ball' ? 'Tap the ball' : 'Tap a point up the aim line'}
         </div>
       ) : (
         gestureHint && !panMode && <div className="gesture-chip">{gestureHint}</div>

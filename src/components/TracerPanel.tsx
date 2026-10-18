@@ -7,17 +7,17 @@ import { withSide } from '../tracer/sign';
 
 const FIELDS: { key: ShotField; label: string; unit: string; step: string; signed?: boolean }[] = [
   { key: 'ballSpeed', label: 'Ball speed', unit: 'mph', step: '0.1' },
-  { key: 'vla', label: 'Launch angle', unit: 'deg', step: '0.1' },
-  { key: 'hla', label: 'Launch direction', unit: 'L / R', step: '0.1', signed: true },
+  { key: 'vla', label: 'Launch angle', unit: '°', step: '0.1' },
+  { key: 'hla', label: 'Launch direction', unit: '°', step: '0.1', signed: true },
   { key: 'spin', label: 'Spin', unit: 'rpm', step: '1' },
-  { key: 'spinAxis', label: 'Spin axis', unit: 'L / R', step: '0.1', signed: true },
-  { key: 'sideSpin', label: 'Side spin', unit: 'L / R rpm', step: '1', signed: true },
-  { key: 'clubPath', label: 'Club path', unit: 'L / R', step: '0.1', signed: true },
-  { key: 'faceToTarget', label: 'Face to target', unit: 'L / R', step: '0.1', signed: true },
-  { key: 'faceToPath', label: 'Face to path', unit: 'L / R', step: '0.1', signed: true },
-  { key: 'carry', label: 'Carry', unit: 'yd', step: '0.1' },
+  { key: 'spinAxis', label: 'Spin axis', unit: '°', step: '0.1', signed: true },
+  { key: 'sideSpin', label: 'Side spin', unit: 'rpm', step: '1', signed: true },
+  { key: 'clubPath', label: 'Club path', unit: '°', step: '0.1', signed: true },
+  { key: 'faceToTarget', label: 'Face to target', unit: '°', step: '0.1', signed: true },
+  { key: 'faceToPath', label: 'Face to path', unit: '°', step: '0.1', signed: true },
+  { key: 'carry', label: 'Carry', unit: 'yds', step: '0.1' },
   { key: 'apex', label: 'Apex', unit: 'ft', step: '0.1' },
-  { key: 'curve', label: 'Curve', unit: 'L / R yd', step: '0.1', signed: true },
+  { key: 'curve', label: 'Curve', unit: 'yds', step: '0.1', signed: true },
 ];
 
 const SOURCE_LABEL = { screen: 'screenshot', typed: 'typed', model: 'calculated' } as const;
@@ -223,14 +223,14 @@ export function TracerPanel({
         })}
       </div>
       <p className="panel-hint">
-        L is left (negative) and R is right (positive). Launch direction is the ball’s start line, not club path. If launch direction is blank, it is about 80% of face to target. If spin axis is blank, it follows face to path, and that sets the curve.
+        L and R are degrees left or right of the aim line. Launch direction is the start line. Spin axis curves the ball off that line, and the aim point is not the landing. If launch direction is blank, it is about 80% of face to target. If spin axis is blank, it follows face to path.
       </p>
       <div className="panel-actions">
         <button type="button" className="btn" data-testid="tracer-ball" onClick={() => onCalibrate('ball')}>
           {tracer.ball ? 'Move ball' : 'Tap the ball'}
         </button>
         <button type="button" className="btn" data-testid="tracer-target" onClick={() => onCalibrate('target')}>
-          {tracer.target ? 'Move target' : 'Tap target line'}
+          {tracer.target ? 'Move aim line' : 'Tap aim line'}
         </button>
       </div>
       <label className="tracer-slider">

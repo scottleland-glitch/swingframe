@@ -76,10 +76,11 @@ function projectRaw(sample: FlightSample, frame: Frame, width: number, height: n
 }
 
 /**
- * Project the flight with a pinhole camera, then rotate in the image so the
- * ground landing — height 0 at carry — lies on the tapped target line.
- * The launch direction is not rotated onto that line. That is what sent the
- * tracer into the sky. The target tap sets direction only, not distance.
+ * Project the flight. The aim tap is the intended line only: world +Z on the
+ * ground, which sets which way the camera is turned. It is not the landing.
+ * Launch direction and spin are already in the samples, so the ball can finish
+ * left or right of that line. Camera height, distance, and field of view are
+ * what change the arc's size.
  */
 export function projectFlight(
   samples: FlightSample[],
@@ -100,11 +101,19 @@ export function projectFlight(
   if (raw.length < 2) return [];
 
   const origin = raw[0];
-  const ground = raw[raw.length - 1];
+  let aim: { x: number; y: number } | null = null;
+  for (const z of [40, 100, 200]) {
+    const pixel = projectRaw({ t: 0, x: 0, y: 0, z }, frame, width, height);
+    if (!pixel) continue;
+    if (Math.hypot(pixel.x - origin.x, pixel.y - origin.y) > 8) {
+      aim = pixel;
+      break;
+    }
+  }
   const ballX = ball.x * width;
   const ballY = ball.y * height;
-  const projX = ground.x - origin.x;
-  const projY = ground.y - origin.y;
+  const projX = (aim?.x ?? origin.x) - origin.x;
+  const projY = (aim?.y ?? origin.y) - origin.y;
   const wantX = target.x * width - ballX;
   const wantY = target.y * height - ballY;
   let cos = 1;
