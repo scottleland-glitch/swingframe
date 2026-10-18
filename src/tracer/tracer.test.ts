@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { chooseUndo, tracerIsSet } from './active';
-import { completeShot, editShot, emptyShot, mergeScreen, simulateShot } from './flight';
+import { completeShot, editShot, emptyShot, mergeScreen, sampleAt, simulateShot } from './flight';
 import { detectImpact } from './impact';
 import { tesseractPaths } from './ocrPaths';
 import { parseForesightText } from './parseShot';
 import { defaultTracer, projectFlight, type TracerPoint } from './project';
 import { withSide } from './sign';
-import { clipEndTime, holdSpan, nextHold, playClock, tracerPlayhead } from './timing';
+import { clipEndTime, holdSpan, nextHold, playClock, tracerPlayhead, tracerProgress } from './timing';
 import type { Pt } from '../types';
 
 function driver(spinAxis = 0, hla = 0, spin = 2600, vla = 12) {
@@ -496,6 +496,67 @@ describe('tracer timing', () => {
     expect(early.hold).toBe(0);
     expect(early.playbackTime).toBeCloseTo(8);
     expect(tracerPlayhead(early.playbackTime, impact, flight)).toBeCloseTo(4.5);
+  });
+
+  it('draws the ground landing and reaches it at the end of the hold', () => {
+    const flight = simulateShot({ ...emptyShot(), ballSpeed: 100, vla: 32, hla: 0, spin: 9000, spinAxis: 0 });
+    expect(flight).not.toBeNull();
+    const last = flight!.samples.at(-1)!;
+    const prev = flight!.samples.at(-2)!;
+    expect(last.y).toBe(0);
+    expect(prev.y).toBeGreaterThan(0);
+    expect(last.t).toBeGreaterThan(prev.t);
+    expect(last.t - prev.t).toBeLessThanOrEqual(0.02 + 1e-9);
+    expect(sampleAt(flight!.samples, last.t - 0.05).y).toBeGreaterThan(0);
+    expect(sampleAt(flight!.samples, last.t).y).toBe(0);
+    expect(sampleAt(flight!.samples, last.t).z).toBeCloseTo(last.z);
+
+    const defaults = defaultTracer();
+    const path = projectFlight(
+      flight!.samples,
+      { view: 'dtl', height: defaults.cameraHeight, distance: defaults.cameraDistance, fov: defaults.fov },
+      { x: 0.5, y: 0.62 },
+      { x: 0.5, y: 0.4 },
+      1080,
+      1920,
+    );
+    expect(path.at(-1)?.t).toBeCloseTo(last.t, 5);
+
+    const impact = 3.5;
+    const clipEnd = 8;
+    const cap = holdSpan(clipEnd, impact, flight!.flightTime);
+    expect(cap).toBeGreaterThan(0.2);
+    const finished = playClock({ videoTime: clipEnd, clipEnd, impact, flightTime: flight!.flightTime, hold: cap });
+    expect(finished.landed).toBe(true);
+    expect(finished.holding).toBe(false);
+    const elapsed = tracerPlayhead(finished.playbackTime, impact, flight!.flightTime);
+    expect(tracerProgress(elapsed, flight!.flightTime)).toBe(1);
+    expect(sampleAt(flight!.samples, elapsed).y).toBe(0);
+
+    const short = playClock({
+      videoTime: clipEnd,
+      clipEnd,
+      impact,
+      flightTime: flight!.flightTime,
+      hold: cap - 0.02,
+    });
+    expect(short.holding).toBe(true);
+    expect(tracerProgress(tracerPlayhead(short.playbackTime, impact, flight!.flightTime), flight!.flightTime)).toBeLessThan(1);
+    expect(sampleAt(flight!.samples, tracerPlayhead(short.playbackTime, impact, flight!.flightTime)).y).toBeGreaterThan(0);
+  });
+
+  it('keeps a 100 mph, 32° wedge on wedge carry', () => {
+    const carries = [5000, 7000, 9000, 11000].map((spin) => {
+      const flight = simulateShot({ ...emptyShot(), ballSpeed: 100, vla: 32, hla: 0, spin, spinAxis: 0 });
+      expect(flight).not.toBeNull();
+      expect(flight!.samples.at(-1)?.y).toBe(0);
+      expect(flight!.carryYd).toBeGreaterThan(90);
+      expect(flight!.carryYd).toBeLessThan(160);
+      return flight!.carryYd;
+    });
+    expect(carries[0]).toBeGreaterThan(carries[3]);
+    expect(carries[3]).toBeGreaterThan(100);
+    expect(carries[3]).toBeLessThan(130);
   });
 
   it('applies left as negative and right as positive', () => {

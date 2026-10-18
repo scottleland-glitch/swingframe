@@ -109,6 +109,31 @@ function axisDegrees(shot: ShotData): number {
   return shot.spinAxis ?? 0;
 }
 
+/**
+ * World position at `elapsed` seconds. At the end of the flight this is the ground crossing, height 0.
+ * The club name is not an input. Only ball speed, launch angle, spin, spin axis, and launch direction are.
+ */
+export function sampleAt(samples: FlightSample[], elapsed: number): FlightSample {
+  if (samples.length === 0) return { t: 0, x: 0, y: 0, z: 0 };
+  const last = samples[samples.length - 1];
+  if (!(elapsed > 0)) return samples[0];
+  if (elapsed >= last.t) return last;
+  for (let i = 1; i < samples.length; i++) {
+    const point = samples[i];
+    if (point.t < elapsed) continue;
+    const prev = samples[i - 1];
+    const span = point.t - prev.t || 1;
+    const frac = Math.min(1, Math.max(0, (elapsed - prev.t) / span));
+    return {
+      t: elapsed,
+      x: prev.x + (point.x - prev.x) * frac,
+      y: prev.y + (point.y - prev.y) * frac,
+      z: prev.z + (point.z - prev.z) * frac,
+    };
+  }
+  return last;
+}
+
 /** Integrate until the ball returns to the ground. Null when speed, launch, or spin is missing. */
 export function simulateShot(shot: ShotData): FlightResult | null {
   if (shot.ballSpeed == null || shot.vla == null || shot.spin == null) return null;
@@ -156,16 +181,18 @@ export function simulateShot(shot: ShotData): FlightResult | null {
     since += STEP;
     if (state[1] > apex) apex = state[1];
     if (t > 0.05 && state[1] <= 0 && state[4] < 0) {
-      const denom = prev[1] - state[1] || 1;
-      const frac = prev[1] / denom;
+      const drop = prev[1] - state[1];
+      const frac = drop !== 0 ? Math.min(1, Math.max(0, prev[1] / drop)) : 1;
+      // The step has already gone underground. The landing is the crossing inside this step, at height 0.
+      const tLand = t - STEP + frac * STEP;
       const x = prev[0] + (state[0] - prev[0]) * frac;
       const z = prev[2] + (state[2] - prev[2]) * frac;
-      samples.push({ t, x, y: 0, z });
+      samples.push({ t: tLand, x, y: 0, z });
       return {
         carryYd: Math.hypot(x, z) * M_TO_YARDS,
         apexFt: apex * M_TO_FEET,
         curveYd: x * M_TO_YARDS,
-        flightTime: t,
+        flightTime: tLand,
         samples,
       };
     }

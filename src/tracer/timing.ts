@@ -1,5 +1,6 @@
 const END_SLOP = 0.05;
-const LAND_SLOP = 0.02;
+/** Only float error. A real slice of the descent, even a fiftieth of a second, is not "landed" yet. */
+const LAND_SLOP = 0.001;
 
 /**
  * Seconds of the tracer to draw.
@@ -11,6 +12,12 @@ export function tracerPlayhead(videoTime: number, impact: number | null, flightT
   const elapsed = videoTime - impact + Math.max(0, extra);
   if (!(elapsed > 0)) return 0;
   return Math.min(flightTime, elapsed);
+}
+
+/** 0 before impact, 1 when the drawn line has reached the ground landing. */
+export function tracerProgress(elapsed: number, flightTime: number): number {
+  if (!(flightTime > 0) || !(elapsed > 0)) return 0;
+  return Math.max(0, Math.min(1, elapsed / flightTime));
 }
 
 /** End of the picture. A trim out, when it is after the trim in, replaces the file duration. */
@@ -54,10 +61,12 @@ export function playClock(input: {
   const end = Math.max(0, input.clipEnd);
   const videoTime = Number.isFinite(input.videoTime) ? input.videoTime : 0;
   const pictureDone = end > 0 && videoTime >= end - END_SLOP;
-  const hold = pictureDone ? Math.max(0, input.hold) : 0;
-  const playbackTime = (pictureDone ? end : videoTime) + hold;
   const hasFlight = input.impact != null && input.flightTime > 0;
   const land = hasFlight ? (input.impact as number) + input.flightTime : end;
+  const cap = hasFlight ? Math.max(0, land - end) : 0;
+  const hold = pictureDone ? Math.min(cap, Math.max(0, input.hold)) : 0;
+  // A finished hold is the landing time itself, so the last drawn point is the ground sample.
+  const playbackTime = pictureDone && hasFlight && hold >= cap - 1e-6 ? land : (pictureDone ? end : videoTime) + hold;
   const remaining = land - playbackTime;
   const holding = pictureDone && hasFlight && remaining > LAND_SLOP;
   const landed = pictureDone && hasFlight && remaining <= LAND_SLOP;

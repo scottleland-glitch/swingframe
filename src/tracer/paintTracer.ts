@@ -5,6 +5,7 @@ function slicePath(path: TracerPoint[], elapsed: number | null): { x: number; y:
   if (path.length < 2) return [];
   if (elapsed == null) return path;
   if (elapsed <= 0) return [];
+  if (elapsed + 1e-4 >= path[path.length - 1].t) return path;
   const visible: { x: number; y: number }[] = [];
   for (let i = 0; i < path.length; i++) {
     const point = path[i];

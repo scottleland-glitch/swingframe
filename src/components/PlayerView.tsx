@@ -301,22 +301,24 @@ export function PlayerView({
       }
       const impact = calRef.current.impactTime;
       const flight = flightRef.current;
+      let videoTime = engine.getTime();
+      // Once the picture has ended, a small clock flicker must not freeze the rest of the descent.
+      if (atEndRef.current && restartUntil.current === 0 && end > 0 && videoTime >= end - 0.2) {
+        videoTime = Math.max(videoTime, end);
+      }
       const clockNow = playClock({
-        videoTime: engine.getTime(),
+        videoTime,
         clipEnd: end,
         impact,
         flightTime: flight,
         hold: holdRef.current,
       });
       if (!clockNow.pictureDone) {
-        if (atEndRef.current && restartUntil.current === 0 && end > 0) {
-          // A small jitter beside the last frame stays in the hold. A jump to the start is put back.
-          if (engine.getTime() < end - 0.2) {
-            engine.pause();
-            if (now - parkedAt.current > 300) {
-              parkedAt.current = now;
-              engine.seek(Math.max(0, end - 0.001));
-            }
+        if (atEndRef.current && restartUntil.current === 0 && end > 0 && engine.getTime() < end - 0.2) {
+          engine.pause();
+          if (now - parkedAt.current > 300) {
+            parkedAt.current = now;
+            engine.seek(Math.max(0, end - 0.001));
           }
           return;
         }
@@ -337,21 +339,12 @@ export function PlayerView({
         engine.seek(Math.max(0, end - 0.001));
       }
       const cap = holdSpan(end, impact, flight);
-      if (!(cap > 0.02)) {
+      const next = nextHold(holdRef.current, dt, rateRef.current, end, impact, flight);
+      if (!(cap > 0) || next >= cap - 1e-4) {
         const settled = cap > 0 ? cap : 0;
-        if (Math.abs(holdRef.current - settled) > 0.0001) {
+        if (Math.abs(holdRef.current - settled) > 1e-6) {
           holdRef.current = settled;
           setTracerHold(settled);
-        }
-        tracerRun.current = false;
-        setHoldingFlag(false);
-        return;
-      }
-      const next = nextHold(holdRef.current, dt, rateRef.current, end, impact, flight);
-      if (cap - next <= 0.02) {
-        if (Math.abs(holdRef.current - cap) > 0.0001) {
-          holdRef.current = cap;
-          setTracerHold(cap);
         }
         tracerRun.current = false;
         setHoldingFlag(false);
