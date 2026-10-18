@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { chooseUndo, tracerIsSet } from './active';
 import { completeShot, editShot, emptyShot, mergeScreen, simulateShot } from './flight';
 import { detectImpact } from './impact';
 import { tesseractPaths } from './ocrPaths';
@@ -341,6 +342,25 @@ describe('impact onset', () => {
     expect(found!).toBeGreaterThan(1.2);
     expect(found!).toBeLessThan(1.32);
     expect(detectImpact(new Float32Array(rate), rate)).toBeNull();
+  });
+});
+
+describe('tracer on a swing', () => {
+  it('knows when there is a tracer to clear', () => {
+    expect(tracerIsSet(emptyShot(), defaultTracer())).toBe(false);
+    expect(tracerIsSet(null, null)).toBe(false);
+    expect(tracerIsSet(emptyShot(), { ...defaultTracer(), impactTime: 1.2 })).toBe(true);
+    expect(tracerIsSet(emptyShot(), { ...defaultTracer(), ball: { x: 0.5, y: 0.7 } })).toBe(true);
+    expect(tracerIsSet({ ...emptyShot(), ballSpeed: 167 }, defaultTracer())).toBe(true);
+    expect(tracerIsSet(emptyShot(), { ...defaultTracer(), cameraHeight: 2 })).toBe(true);
+  });
+
+  it('undoes a tracer clear ahead of older drawings and behind a newer one', () => {
+    expect(chooseUndo({ hasDraft: true, hasTracerUndo: true, tracerStamp: 2, drawingStamp: 1, drawingSteps: 1 })).toBe('draft');
+    expect(chooseUndo({ hasDraft: false, hasTracerUndo: true, tracerStamp: 3, drawingStamp: 1, drawingSteps: 2 })).toBe('tracer');
+    expect(chooseUndo({ hasDraft: false, hasTracerUndo: true, tracerStamp: 1, drawingStamp: 4, drawingSteps: 1 })).toBe('drawing');
+    expect(chooseUndo({ hasDraft: false, hasTracerUndo: true, tracerStamp: 1, drawingStamp: 0, drawingSteps: 0 })).toBe('tracer');
+    expect(chooseUndo({ hasDraft: false, hasTracerUndo: false, tracerStamp: 0, drawingStamp: 0, drawingSteps: 0 })).toBe('none');
   });
 });
 

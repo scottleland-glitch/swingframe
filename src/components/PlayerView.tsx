@@ -7,10 +7,11 @@ import { connectGoogle, googleConnected } from '../googleAuth';
 import { cx, errorMessage, formatDate, formatRate, formatScrub, formatTime, viewLabel } from '../format';
 import { withColor } from '../geometry';
 import { detectImpactTime } from '../tracer/detect';
+import { chooseUndo, tracerIsSet } from '../tracer/active';
 import { emptyShot, simulateShot } from '../tracer/flight';
 import { defaultTracer, projectFlight } from '../tracer/project';
 import { tracerPlayhead } from '../tracer/timing';
-import type { ShotData, SwingMeta, Tool, TracerCalibration } from '../types';
+import type { Drawing, ShotData, SwingMeta, Tool, TracerCalibration } from '../types';
 import { useSwing } from '../useSwing';
 import { APP_VERSION } from '../version';
 import { DetailsSheet } from './DetailsSheet';
@@ -117,6 +118,27 @@ export function PlayerView({
   const rateRef = useRef(rate);
   const loopRef = useRef(loop);
   const [tracerHold, setTracerHold] = useState(0);
+  const [tracerEngaged, setTracerEngaged] = useState(false);
+  const [confirmTracer, setConfirmTracer] = useState(false);
+  const [tracerUndoReady, setTracerUndoReady] = useState(false);
+  const tracerUndo = useRef<{ shot: ShotData; tracer: TracerCalibration } | null>(null);
+  const undoStamp = useRef(0);
+  const tracerUndoStamp = useRef(0);
+  const drawingUndoStamp = useRef(0);
+  const barObserver = useRef<ResizeObserver | null>(null);
+  const setBarNode = useCallback((node: HTMLDivElement | null) => {
+    barObserver.current?.disconnect();
+    barObserver.current = null;
+    const screen = node?.parentElement;
+    if (!node || !screen) return;
+    const apply = () => {
+      screen.style.setProperty('--player-bar-height', `${Math.ceil(node.getBoundingClientRect().height)}px`);
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(node);
+    barObserver.current = observer;
+  }, []);
   rateRef.current = rate;
   loopRef.current = loop;
   const [others, setOthers] = useState<SwingMeta[]>([]);
@@ -159,7 +181,16 @@ export function PlayerView({
   useEffect(() => {
     hydratedFor.current = null;
     setMode(null);
+    tracerUndo.current = null;
+    tracerUndoStamp.current = 0;
+    drawingUndoStamp.current = 0;
+    undoStamp.current = 0;
+    setTracerUndoReady(false);
+    setTracerEngaged(false);
+    setConfirmTracer(false);
   }, [id, setMode]);
+
+  useEffect(() => () => barObserver.current?.disconnect(), []);
 
   useEffect(() => {
     if (!swing || swing.id !== id) return;
@@ -313,26 +344,102 @@ export function PlayerView({
     engine.seek(time);
   }, [clearTracerHold]);
 
+  const showImpactChip = tracerEngaged || tracerIsSet(activeShot, activeCal);
+  const canUndo = pastCount > 0 || hasDraft || tracerUndoReady;
+
+  const commitDrawings = useCallback(
+    (next: Drawing[]) => {
+      undoStamp.current += 1;
+      drawingUndoStamp.current = undoStamp.current;
+      commit(next);
+    },
+    [commit],
+  );
+
+  const restoreTracer = useCallback(() => {
+    const prev = tracerUndo.current;
+    if (!prev) return;
+    tracerUndo.current = null;
+    tracerUndoStamp.current = 0;
+    setTracerUndoReady(false);
+    setTracerEngaged(true);
+    rememberTracer(prev.shot, prev.tracer, true);
+  }, [rememberTracer]);
+
   const undoAll = useCallback(() => {
     if (stageRef.current?.undoDraft()) return;
-    undo();
-    setSelectedId(null);
-  }, [undo]);
+    const choice = chooseUndo({
+      hasDraft: false,
+      hasTracerUndo: tracerUndo.current != null,
+      tracerStamp: tracerUndoStamp.current,
+      drawingStamp: drawingUndoStamp.current,
+      drawingSteps: pastCount,
+    });
+    if (choice === 'tracer') {
+      restoreTracer();
+      return;
+    }
+    if (choice === 'drawing') {
+      undo();
+      setSelectedId(null);
+      if (pastCount <= 1) drawingUndoStamp.current = 0;
+    }
+  }, [pastCount, restoreTracer, undo]);
+
+  const markImpact = useCallback(() => {
+    const time = stageRef.current?.getTime() ?? 0;
+    rememberTracer(shotRef.current, { ...calRef.current, impactTime: time }, true);
+    setTracerNote(null);
+    setTracerEngaged(true);
+  }, [rememberTracer]);
+
+  const clearTracer = useCallback(() => {
+    const prevShot = shotRef.current;
+    const prevTracer = calRef.current;
+    if (tracerTimer.current) window.clearTimeout(tracerTimer.current);
+    tracerTimer.current = null;
+    tracerPending.current = null;
+    const blankShot = emptyShot();
+    const blankTracer = defaultTracer();
+    setShot(blankShot);
+    setTracerCal(blankTracer);
+    shotRef.current = blankShot;
+    calRef.current = blankTracer;
+    setMode(null);
+    clearTracerHold();
+    setTracerEngaged(false);
+    setTracerNote(null);
+    void patch({ shot: null, tracer: null })
+      .then(() => {
+        undoStamp.current += 1;
+        tracerUndoStamp.current = undoStamp.current;
+        tracerUndo.current = { shot: prevShot, tracer: prevTracer };
+        setTracerUndoReady(true);
+      })
+      .catch(() => {
+        setShot(prevShot);
+        setTracerCal(prevTracer);
+        shotRef.current = prevShot;
+        calRef.current = prevTracer;
+        setTracerEngaged(true);
+        setPlayError('Could not clear the tracer.');
+      });
+  }, [clearTracerHold, patch, setMode]);
 
   const canClear = drawings.length > 0 || hasDraft;
 
   const clearAll = useCallback(() => {
     stageRef.current?.undoDraft();
-    if (drawings.length > 0) commit([]);
+    if (drawings.length > 0) commitDrawings([]);
     setSelectedId(null);
     setConfirmClear(false);
-  }, [commit, drawings.length]);
+  }, [commitDrawings, drawings.length]);
 
   const removeSelected = useCallback(() => {
     if (!selectedId) return;
-    commit(drawings.filter((drawing) => drawing.id !== selectedId));
+    commitDrawings(drawings.filter((drawing) => drawing.id !== selectedId));
     setSelectedId(null);
-  }, [commit, drawings, selectedId]);
+  }, [commitDrawings, drawings, selectedId]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -504,7 +611,7 @@ export function PlayerView({
           trimOut={trimOut}
           overlayBlob={overlayBlob}
           onSelect={setSelectedId}
-          onCommit={commit}
+          onCommit={commitDrawings}
           onDraftChange={setHasDraft}
           calibrate={tracerMode}
           onCalibrate={(pt) => {
@@ -550,7 +657,13 @@ export function PlayerView({
       {pinch && <p className="pinch-banner">Drag to pan. Use two fingers to zoom. Open the wrench to draw.</p>}
       {(saveError || playError) && <p className="player-banner">{saveError || playError}</p>}
 
-      <div className="player-bar">
+      <div className="player-bar" ref={setBarNode}>
+        {showImpactChip && (
+          <button type="button" className="tracer-impact-chip" data-testid="set-impact-bar" onClick={markImpact}>
+            Set impact time
+            {activeCal.impactTime != null && <small>{formatTime(activeCal.impactTime)}</small>}
+          </button>
+        )}
         <Scrubber className="slim" value={clock.time} max={clock.duration} onScrub={scrub} testId="play-scrubber" />
         <div className="bar-meta">
           <button type="button" className="speed-pill" data-testid="speed-pill" aria-label="Playback speed" onClick={cycleRate}>
@@ -604,7 +717,7 @@ export function PlayerView({
             className="bar-icon bar-undo"
             aria-label="Undo"
             data-testid="bar-undo"
-            disabled={pastCount === 0 && !hasDraft}
+            disabled={!canUndo}
             onClick={undoAll}
           >
             <Icon name="undo" />
@@ -677,7 +790,10 @@ export function PlayerView({
                     label="Tracer"
                     pressed={Boolean(activeCal.ball && activeShot.ballSpeed != null)}
                     testId="edit-tracer"
-                    onClick={() => setPanelPage('tracer')}
+                    onClick={() => {
+                      setTracerEngaged(true);
+                      setPanelPage('tracer');
+                    }}
                   />
                 </div>
                 <h2>Draw Tools</h2>
@@ -693,7 +809,7 @@ export function PlayerView({
                       onClick={() => chooseTool(item.id)}
                     />
                   ))}
-                  <ToolButton icon="undo" label="Undo" testId="tool-undo" disabled={pastCount === 0 && !hasDraft} onClick={undoAll} />
+                  <ToolButton icon="undo" label="Undo" testId="tool-undo" disabled={!canUndo} onClick={undoAll} />
                 </div>
                 <button
                   type="button"
@@ -797,11 +913,9 @@ export function PlayerView({
                     .catch(() => setTracerNote('Could not find the hit. Pause on that frame and tap Set impact time.'))
                     .finally(() => setImpactBusy(false));
                 }}
-                onMarkImpact={() => {
-                  const time = stageRef.current?.getTime() ?? 0;
-                  rememberTracer(shotRef.current, { ...calRef.current, impactTime: time }, true);
-                  setTracerNote(null);
-                }}
+                onMarkImpact={markImpact}
+                onClear={() => setConfirmTracer(true)}
+                canClear={tracerIsSet(activeShot, activeCal)}
                 onCalibrate={(which) => {
                   setMode(which);
                   setToolsOpen(false);
@@ -873,7 +987,8 @@ export function PlayerView({
             <p className="tip">
               The video stays on this page. Place a drawing with two fingers. Undo and Clear all are on the white bar.
               Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. Tracer, in the wrench,
-              draws the ball flight from a Foresight screenshot or from numbers you type. Pause on impact and tap Set impact time.
+              draws the ball flight from a Foresight screenshot or from numbers you type. Pause on impact and tap Set impact time
+              on the bar. Clear tracer removes the line. Undo puts it back.
             </p>
             {swing.notes ? <p className="note-block">{swing.notes}</p> : null}
             <div className="fps-row" role="group" aria-label="Frame step size">
@@ -1009,6 +1124,20 @@ export function PlayerView({
               await releaseLocalVideo(swing.id);
               setDriveNote('Removed the video from this phone.');
             });
+          }}
+        />
+      )}
+      {confirmTracer && (
+        <Dialog
+          title="Clear the tracer?"
+          body="The shot numbers, ball, target, and impact time will be removed, and the line will disappear. Undo puts them back."
+          confirmLabel="Clear tracer"
+          danger
+          confirmTestId="confirm-clear-tracer"
+          onCancel={() => setConfirmTracer(false)}
+          onConfirm={() => {
+            setConfirmTracer(false);
+            clearTracer();
           }}
         />
       )}

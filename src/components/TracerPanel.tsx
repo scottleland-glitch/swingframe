@@ -41,6 +41,8 @@ export function TracerPanel({
   onDetect,
   onMarkImpact,
   onCalibrate,
+  onClear,
+  canClear,
   onBack,
 }: {
   view: ViewAngle;
@@ -53,6 +55,8 @@ export function TracerPanel({
   onDetect: () => void;
   onMarkImpact: () => void;
   onCalibrate: (which: 'ball' | 'target') => void;
+  onClear: () => void;
+  canClear: boolean;
   onBack: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -270,7 +274,7 @@ export function TracerPanel({
       </label>
       <p className="panel-hint" data-testid="tracer-impact">
         Impact {tracer.impactTime == null ? 'not set' : formatTime(tracer.impactTime)}. Flight{' '}
-        {flight ? `${flight.flightTime.toFixed(1)}s` : '—'} until the ball is on the ground. Pause on the hit and tap Set impact time. The line grows with playback, including slow motion, and stays up after it lands. If the clip ends first, it keeps going on the last frame.
+        {flight ? `${flight.flightTime.toFixed(1)}s` : '—'} until the ball is on the ground. Pause on the hit and tap Set impact time, here or on the bar above play. The line grows with playback, including slow motion, and stays up after it lands. If the clip ends first, it keeps going on the last frame.
       </p>
       <div className="panel-actions">
         <button type="button" className="btn primary" data-testid="tracer-mark" onClick={onMarkImpact}>
@@ -280,6 +284,9 @@ export function TracerPanel({
           {busy ? 'Finding impact…' : 'Detect from sound'}
         </button>
       </div>
+      <button type="button" className="btn danger" data-testid="tracer-clear" disabled={!canClear} onClick={onClear}>
+        Clear tracer
+      </button>
       <button type="button" className="text-btn" onClick={onBack}>
         Back
       </button>

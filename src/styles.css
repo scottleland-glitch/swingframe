@@ -608,6 +608,7 @@ textarea { resize: vertical; }
   position: relative;
   background: #000;
   overflow: hidden;
+  --player-bar-height: calc(180px + var(--safe-bottom));
 }
 .player-stage { background: #000; }
 .float-btn, .time-pill {
@@ -721,24 +722,51 @@ textarea { resize: vertical; }
 .bar-wrench.is-on { background: rgba(0, 0, 0, 0.08); }
 .tool-backdrop {
   position: absolute;
-  inset: 0;
   z-index: 8;
+  left: 0;
+  right: 0;
+  top: calc(96px + var(--safe-top));
+  bottom: var(--player-bar-height);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 16px;
+  justify-content: flex-end;
+  padding: 8px 12px;
   background: rgba(0, 0, 0, 0.28);
 }
 .tool-panel {
-  width: min(360px, 100%);
-  max-height: calc(100% - 24px);
+  width: min(420px, 100%);
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 100%;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   border-radius: 22px;
   padding: 8px 12px 16px;
   background: rgba(28, 28, 30, 0.88);
   color: #fff;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+}
+.tracer-impact-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin: 8px 0 2px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-size: 15px;
+}
+.tracer-impact-chip small {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .tool-panel h2 {
   margin: 12px 0 8px;
@@ -850,6 +878,7 @@ textarea { resize: vertical; }
   .hint, .coach { display: none; }
   .play-btn { width: 48px; height: 48px; }
   .step-btn { width: 42px; height: 42px; }
+  .tool-backdrop { top: calc(48px + var(--safe-top)); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
