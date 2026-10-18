@@ -31,7 +31,7 @@ npm test
 npm run dev
 ```
 
-Open the URL Vite prints, usually http://localhost:5173. `npm test` checks the angle math and the drawing hit tests. `npm run build` makes the static site in `dist/`.
+Open the URL Vite prints, then add `/swingframe/` (usually http://localhost:5173/swingframe/). The app is built for that subpath so it matches GitHub Pages. `npm test` checks the angle math and the drawing hit tests. `npm run build` makes the static site in `dist/`.
 
 ## Put it on Scott's iPhone
 
@@ -39,21 +39,24 @@ The home screen app needs **HTTPS**. A laptop on the same Wi-Fi (`npm run dev --
 
 Import swings **after** opening the icon you added. On iPhone, the Home Screen app keeps its own storage, separate from a Safari tab. Swings saved in the tab will not show up inside the icon.
 
-### Easiest: Netlify Drop
+### GitHub Pages
 
-1. On the computer: `npm install` then `npm run build`.
-2. Sign in at [https://app.netlify.com/drop](https://app.netlify.com/drop) (a free account is enough).
-3. Drag the `dist` folder onto the page. Netlify gives you an `https://` address.
-4. On the iPhone, open that address in **Safari**.
-5. Tap the Share button (the square with the arrow), then **Add to Home Screen**. Name it Swingframe and tap Add.
-6. Open Swingframe from the home screen. The first time you record or choose a video, allow Camera or Photos if iOS asks.
+The address is [https://scottleland-glitch.github.io/swingframe/](https://scottleland-glitch.github.io/swingframe/), from a public repo named `swingframe` under `scottleland-glitch`. That repo is separate from `golf-shot-tracker`. A push to `main` runs `.github/workflows/pages.yml`, which builds `dist/` and deploys with GitHub Actions. Assets, the manifest, and the service worker all live under `/swingframe/`, and the cache name is prefixed `swingframe` so it does not share caches with another site on `github.io`.
 
-### When you want updates later: Cloudflare Pages
+One-time setup, signed in as scottleland-glitch:
 
-1. Push this repo to GitHub.
-2. In [Cloudflare Pages](https://pages.cloudflare.com), create a project from that repo.
-3. Build command: `npm run build`. Output directory: `dist`.
-4. Open the `https://` URL Cloudflare gives you, and add it to the Home Screen the same way.
+1. Create a new **public** repository named `swingframe`. Leave `golf-shot-tracker` alone.
+2. Push this project to that repo's `main` branch.
+3. In the repo, open Settings → Pages → Build and deployment, and set Source to **GitHub Actions**.
+4. Wait until the "Deploy GitHub Pages" workflow is green.
+
+Then on the iPhone:
+
+1. Open [https://scottleland-glitch.github.io/swingframe/](https://scottleland-glitch.github.io/swingframe/) in **Safari**.
+2. Tap the Share button (the square with the arrow), then **Add to Home Screen**. Name it Swingframe and tap Add.
+3. Open Swingframe from the home screen. The first time you record or choose a video, allow Camera or Photos if iOS asks.
+
+Do not host this build at the root of another domain without changing `base` in `vite.config.ts`. A root host would look for files at `/swingframe/` and miss them.
 
 After it has loaded once from the icon, the screens open offline. Videos you already saved play offline too. The first install still needs a network connection.
 
