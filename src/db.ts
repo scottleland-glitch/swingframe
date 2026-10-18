@@ -1,5 +1,6 @@
 import { requestPersistentStorage } from './platform';
 import type { SwingMeta } from './types';
+import { playbackMime } from './videoFile';
 
 const DB_NAME = 'swingframe';
 const DB_VERSION = 2;
@@ -84,7 +85,10 @@ function asBlob(value: unknown, fallbackType: string): Blob | null {
     if (value instanceof Blob) return value.size > 0 ? value : null;
     const stored = storedBytes(value);
     if (stored && stored.bytes.byteLength > 0) {
-      return new Blob([plainBuffer(stored.bytes)], { type: stored.type || fallbackType });
+      const mime = fallbackType.startsWith('image/')
+        ? stored.type || fallbackType
+        : playbackMime(stored.type || fallbackType);
+      return new Blob([plainBuffer(stored.bytes)], { type: mime });
     }
   } catch {
     return null;
@@ -267,7 +271,8 @@ export function saveSwing(meta: SwingMeta, video: Blob): Promise<void> {
   return enqueue(async () => {
     await requestPersistentStorage();
     await ensureStoredBytes();
-    const videoRecord = await toStoredBytes(video, meta.mimeType || 'video/mp4');
+    const videoRecord = await toStoredBytes(video, playbackMime(meta.mimeType || video.type, meta.fileName));
+    videoRecord.type = playbackMime(video.type || videoRecord.type, meta.fileName);
     const expected = videoRecord.bytes.byteLength;
     if (expected === 0) {
       throw new Error('That video was empty and was not saved.');

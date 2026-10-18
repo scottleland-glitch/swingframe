@@ -18,7 +18,7 @@ export type Drawing =
   | { id: string; type: 'pen'; color: string; points: Pt[] }
   | { id: string; type: 'angle'; color: string; a: Pt; v: Pt; b: Pt }
   | { id: string; type: 'circle'; color: string; c: Pt; r: number }
-  | { id: string; type: 'box'; color: string; x: number; y: number; w: number; h: number }
+  | { id: string; type: 'box'; color: string; x: number; y: number; w: number; h: number; rot?: number }
   | { id: string; type: 'hline'; color: string; y: number }
   | { id: string; type: 'vline'; color: string; x: number };
 

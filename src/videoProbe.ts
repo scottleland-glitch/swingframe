@@ -87,7 +87,7 @@ export function looksLikeVideo(file: File): boolean {
   return /\.(mov|mp4|m4v|webm|avi|mkv)$/i.test(file.name);
 }
 
-export async function probeVideo(file: File): Promise<ProbeResult> {
+export async function probeVideo(file: Blob): Promise<ProbeResult> {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
   video.muted = true;

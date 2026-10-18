@@ -5,6 +5,9 @@ export function Dialog({
   body,
   confirmLabel,
   danger = false,
+  alternateLabel,
+  alternateDanger = false,
+  onAlternate,
   onConfirm,
   onCancel,
 }: {
@@ -12,6 +15,9 @@ export function Dialog({
   body: string;
   confirmLabel: string;
   danger?: boolean;
+  alternateLabel?: string;
+  alternateDanger?: boolean;
+  onAlternate?: () => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -40,6 +46,11 @@ export function Dialog({
           <button ref={cancelRef} type="button" className="btn" onClick={onCancel}>
             Cancel
           </button>
+          {alternateLabel && onAlternate && (
+            <button type="button" className={alternateDanger ? 'btn danger' : 'btn'} onClick={onAlternate}>
+              {alternateLabel}
+            </button>
+          )}
           <button type="button" className={danger ? 'btn danger' : 'btn primary'} onClick={onConfirm}>
             {confirmLabel}
           </button>

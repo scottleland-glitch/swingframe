@@ -3,8 +3,26 @@ import { CLUBS, DEFAULT_FPS } from '../constants';
 import { isQuotaError, quotaMessage, saveSwing } from '../db';
 import { errorMessage, formatBytes, todayISO, uid } from '../format';
 import type { SwingMeta, ViewAngle } from '../types';
-import { exitIfNativeFullscreen, loadInlineSource, mediaErrorMessage, paintFirstFrame } from '../inlineVideo';
+import { exitIfNativeFullscreen, loadInlineSource, markInline, mediaErrorMessage, paintFirstFrame } from '../inlineVideo';
 import { looksLikeVideo, probeVideo, type ProbeResult } from '../videoProbe';
+import { blobWithMime, playbackMime } from '../videoFile';
+import { Dialog } from './Dialog';
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        window.clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(message));
+      },
+    );
+  });
+}
 import { Icon } from './Icons';
 import { ViewPicker } from './ViewPicker';
 
@@ -18,7 +36,8 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
   const [error, setError] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const previewRef = useRef<HTMLVideoElement>(null);
-  const [view, setView] = useState<ViewAngle | null>(null);
+  const [view, setView] = useState<ViewAngle>('dtl');
+  const [confirmClose, setConfirmClose] = useState(false);
   const [date, setDate] = useState(todayISO);
   const [club, setClub] = useState('');
   const [notes, setNotes] = useState('');
@@ -50,9 +69,12 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
       if (!cancelled) setPreviewError(mediaErrorMessage(node));
     };
     const onFs = () => exitIfNativeFullscreen(node);
+    const keepInline = () => markInline(node);
     node.addEventListener('loadeddata', onReady);
+    node.addEventListener('loadedmetadata', keepInline);
     node.addEventListener('error', onErr);
     node.addEventListener('webkitbeginfullscreen', onFs);
+    markInline(node);
     loadInlineSource(node, previewUrl);
     const timer = window.setTimeout(() => {
       if (cancelled || node.readyState >= 1 || node.error) return;
@@ -62,6 +84,7 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
       cancelled = true;
       window.clearTimeout(timer);
       node.removeEventListener('loadeddata', onReady);
+      node.removeEventListener('loadedmetadata', keepInline);
       node.removeEventListener('error', onErr);
       node.removeEventListener('webkitbeginfullscreen', onFs);
     };
@@ -78,18 +101,31 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
     setReading(true);
     setFile(next);
     setProbe(null);
-    setPreviewUrl(URL.createObjectURL(next));
+    const playback = blobWithMime(next, playbackMime(next.type, next.name));
+    setPreviewUrl(URL.createObjectURL(playback));
     try {
-      const result = await probeVideo(next);
+      const result = await withTimeout(
+        probeVideo(playback),
+        12000,
+        'Reading that video took too long. You can still save it.',
+      );
       if (!alive.current) return;
       setProbe(result);
     } catch (err) {
       if (!alive.current) return;
-      setFile(null);
-      setError(errorMessage(err, 'Could not read that video.'));
+      setError(errorMessage(err, 'Could not read that video. You can still save it.'));
     } finally {
       if (alive.current) setReading(false);
     }
+  }
+
+  function requestClose() {
+    if (saving) return;
+    if (file) {
+      setConfirmClose(true);
+      return;
+    }
+    onClose();
   }
 
   async function save() {
@@ -107,7 +143,7 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
       videoWidth: probe?.width ?? 0,
       videoHeight: probe?.height ?? 0,
       fps: DEFAULT_FPS,
-      mimeType: file.type || 'video/mp4',
+      mimeType: playbackMime(file.type, file.name),
       fileName: file.name || 'swing.mov',
       byteSize: file.size,
       thumbnail: probe?.thumbnail ?? null,
@@ -127,7 +163,7 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
   return (
     <div className="sheet" role="dialog" aria-modal="true" aria-label="Add swing">
       <header className="topbar">
-        <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
+        <button type="button" className="icon-btn" aria-label="Close" data-testid="close-add" onClick={requestClose}>
           <Icon name="close" />
         </button>
         <div className="titles">
@@ -135,8 +171,8 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
           <p>Tag it before you save</p>
         </div>
       </header>
-      <div className="sheet-body">
-        {!file && (
+      {!file && (
+        <div className="sheet-body">
           <div className="source-picker">
             <label className="source-btn">
               <input
@@ -174,24 +210,33 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
               while you review.
             </p>
           </div>
-        )}
+          {error && (
+            <p className="banner" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
 
-        {file && (
-          <form
-            className="swing-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void save();
-            }}
-          >
+      {file && (
+        <form
+          className="sheet-form swing-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save();
+          }}
+        >
+          <div className="sheet-body">
             {previewUrl && (
               <video
-                ref={previewRef}
+                ref={(node) => {
+                  previewRef.current = node;
+                  if (node) markInline(node);
+                }}
                 className="preview"
                 playsInline
                 muted
                 preload="auto"
-                controls={false}
                 aria-label="Import preview"
               />
             )}
@@ -202,7 +247,7 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
             )}
             <p className="file-line">
               {file.name || 'Video'} · {formatBytes(file.size)}
-              {reading ? ' · Reading…' : ''}
+              {reading ? ' · Reading… you can save now.' : ''}
             </p>
             <ViewPicker value={view} onChange={setView} />
             <label className="field">
@@ -241,40 +286,54 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
                 maxLength={500}
               />
             </label>
+          </div>
+          <div className="sheet-footer">
             {error && (
               <p className="banner" role="alert">
                 {error}
               </p>
             )}
-            <div className="form-actions">
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  setFile(null);
-                  setProbe(null);
-                  setError(null);
-                }}
-              >
-                Different video
-              </button>
-              <button
-                type="submit"
-                className="btn primary"
-                data-testid="save-swing"
-                disabled={!view || reading || saving}
-              >
-                {saving ? 'Saving…' : 'Save swing'}
-              </button>
-            </div>
-          </form>
-        )}
-        {!file && error && (
-          <p className="banner" role="alert">
-            {error}
-          </p>
-        )}
-      </div>
+            {!view && (
+              <p className="save-hint" data-testid="save-hint">
+                Pick Down the Line or Face On.
+              </p>
+            )}
+            <button type="submit" className="btn primary" data-testid="save-swing" disabled={!view || saving}>
+              {saving ? 'Saving…' : 'Save swing'}
+            </button>
+            <button
+              type="button"
+              className="text-btn"
+              onClick={() => {
+                setFile(null);
+                setProbe(null);
+                setError(null);
+                setPreviewError(null);
+              }}
+            >
+              Different video
+            </button>
+          </div>
+        </form>
+      )}
+      {confirmClose && (
+        <Dialog
+          title="This swing isn't saved"
+          body="Closing now discards the video. It is not in the library until you save."
+          confirmLabel="Save swing"
+          alternateLabel="Discard video"
+          alternateDanger
+          onCancel={() => setConfirmClose(false)}
+          onAlternate={() => {
+            setConfirmClose(false);
+            onClose();
+          }}
+          onConfirm={() => {
+            setConfirmClose(false);
+            void save();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -13,14 +13,14 @@ import { Scrubber } from './Scrubber';
 import { VideoStage, type VideoEngine } from './VideoStage';
 
 const HINTS: Record<Tool, string> = {
-  select: 'Drag a drawing to move it. Drag a handle to reshape it.',
-  line: 'Drag a swing-plane line. It extends across the frame.',
-  pen: 'Draw with one finger.',
-  angle: 'Tap the end, the joint, then the other end.',
-  circle: 'Drag from the center outward.',
-  box: 'Drag a box.',
-  hline: 'Drag a level line.',
-  vline: 'Drag a plumb line.',
+  select: 'Two fingers move, pinch, or turn a drawing. Drag a white handle with one finger to fine-tune.',
+  line: 'Two fingers. Each finger is one end of the line. It extends across the frame.',
+  pen: 'Two fingers. The stroke follows the point between them.',
+  angle: 'Two fingers set the arms. The joint sits halfway between them.',
+  circle: 'Two fingers. Pinch to size the circle, drag to place it.',
+  box: 'Two fingers. Pinch to size the box, drag to place it.',
+  hline: 'Two fingers place the level line.',
+  vline: 'Two fingers place the plumb line.',
   erase: 'Tap a drawing to remove it.',
 };
 
@@ -340,6 +340,16 @@ export function PlayerView({
           </button>
           <button type="button" className="bar-icon" aria-label="Next frame" data-testid="play-forward" onClick={() => step(1)}>
             <Icon name="stepForward" />
+          </button>
+          <button
+            type="button"
+            className="bar-icon bar-undo"
+            aria-label="Undo"
+            data-testid="bar-undo"
+            disabled={pastCount === 0 && !hasDraft}
+            onClick={undoAll}
+          >
+            <Icon name="undo" />
           </button>
           <button
             type="button"

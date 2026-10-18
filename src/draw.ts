@@ -1,4 +1,4 @@
-import { angleArc, angleDegrees, extendLine } from './geometry';
+import { angleArc, angleDegrees, boxFrame, extendLine } from './geometry';
 import type { Drawing, Pt } from './types';
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -33,6 +33,20 @@ function strokeInk(ctx: CanvasRenderingContext2D, color: string, width: number, 
   ctx.lineWidth = width;
   ctx.stroke();
   ctx.setLineDash([]);
+}
+
+function handleDot(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  ctx.beginPath();
+  ctx.arc(x, y, 12, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, y, 7.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#111111';
+  ctx.stroke();
 }
 
 function dot(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, radius: number) {
@@ -102,8 +116,13 @@ function paintOne(ctx: CanvasRenderingContext2D, d: Drawing, w: number, h: numbe
       ctx.moveTo(ax, ay);
       ctx.lineTo(bx, by);
       strokeInk(ctx, color, width);
-      dot(ctx, ax, ay, color, selected ? 5 : 4);
-      dot(ctx, bx, by, color, selected ? 5 : 4);
+      if (selected) {
+        handleDot(ctx, ax, ay);
+        handleDot(ctx, bx, by);
+      } else {
+        dot(ctx, ax, ay, color, 4);
+        dot(ctx, bx, by, color, 4);
+      }
       break;
     }
     case 'pen': {
@@ -130,9 +149,15 @@ function paintOne(ctx: CanvasRenderingContext2D, d: Drawing, w: number, h: numbe
       ctx.lineTo(vx, vy);
       ctx.lineTo(bx, by);
       strokeInk(ctx, color, width);
-      dot(ctx, ax, ay, color, 4);
-      dot(ctx, vx, vy, color, 5);
-      dot(ctx, bx, by, color, 4);
+      if (selected) {
+        handleDot(ctx, ax, ay);
+        handleDot(ctx, vx, vy);
+        handleDot(ctx, bx, by);
+      } else {
+        dot(ctx, ax, ay, color, 4);
+        dot(ctx, vx, vy, color, 5);
+        dot(ctx, bx, by, color, 4);
+      }
       paintAngleLabel(ctx, d.a, d.v, d.b, color, w, h);
       break;
     }
@@ -145,20 +170,28 @@ function paintOne(ctx: CanvasRenderingContext2D, d: Drawing, w: number, h: numbe
       ctx.fillStyle = hexToRgba(color, 0.12);
       ctx.fill();
       strokeInk(ctx, color, width);
-      dot(ctx, cx, cy, color, 3.5);
-      if (selected) dot(ctx, cx + r, cy, '#ffffff', 4);
+      if (selected) {
+        handleDot(ctx, cx, cy);
+        handleDot(ctx, cx + r, cy);
+      } else {
+        dot(ctx, cx, cy, color, 3.5);
+      }
       break;
     }
     case 'box': {
-      const x = d.x * w;
-      const y = d.y * h;
-      const bw = d.w * w;
-      const bh = d.h * h;
+      const frame = boxFrame(d, w, h);
+      ctx.save();
+      ctx.translate(frame.cx, frame.cy);
+      ctx.rotate(frame.rot);
       ctx.beginPath();
-      ctx.rect(x, y, bw, bh);
+      ctx.rect(-frame.bw / 2, -frame.bh / 2, frame.bw, frame.bh);
       ctx.fillStyle = hexToRgba(color, 0.1);
       ctx.fill();
       strokeInk(ctx, color, width);
+      ctx.restore();
+      if (selected) {
+        for (const corner of frame.corners) handleDot(ctx, corner.x, corner.y);
+      }
       break;
     }
     case 'hline': {
@@ -183,21 +216,6 @@ function paintOne(ctx: CanvasRenderingContext2D, d: Drawing, w: number, h: numbe
     }
   }
 
-  if (!selected) return;
-  if (d.type === 'box') {
-    const x = d.x * w;
-    const y = d.y * h;
-    const bw = d.w * w;
-    const bh = d.h * h;
-    for (const [hx, hy] of [
-      [x, y],
-      [x + bw, y],
-      [x, y + bh],
-      [x + bw, y + bh],
-    ]) {
-      dot(ctx, hx, hy, '#ffffff', 4);
-    }
-  }
 }
 
 export function paint(

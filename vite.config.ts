@@ -45,7 +45,8 @@ function precacheOnlyUnderBase(): Plugin {
           entries.push({ url: match[1], revision });
         }
         if (entries.length === 0) throw new Error('Swingframe service worker precache list could not be read');
-        const kept = entries.filter((entry) => entry.url.startsWith(BASE));
+        const scoped = entries.filter((entry) => entry.url.startsWith(BASE));
+        const kept = scoped.filter((entry) => !entry.url.endsWith('/index.html') && !entry.url.endsWith('/sw.js'));
         const dropped = entries.filter((entry) => !entry.url.startsWith(BASE));
         for (const entry of dropped) {
           const twin = `${BASE}${entry.url.replace(/^\//, '')}`;
@@ -54,7 +55,19 @@ function precacheOnlyUnderBase(): Plugin {
           }
         }
         if (kept.length === 0) throw new Error('Swingframe precache list is empty');
-        writeFileSync(path, sw.slice(0, arrStart) + JSON.stringify(kept) + sw.slice(arrEnd + 1));
+        // Tell open pages a new worker is in control. Do not client.navigate()
+        // here: that navigation is fetched by this worker, and Chrome will not
+        // finish it until activate's waitUntil resolves, so awaiting it hangs
+        // the page. The page reloads itself, once, on this message.
+        const refresh = `
+self.addEventListener('activate',function(event){event.waitUntil((async function(){
+var list=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+for(var i=0;i<list.length;i++){
+try{list[i].postMessage({type:'swingframe-updated'})}catch(e){}
+}
+})());});
+`;
+        writeFileSync(path, sw.slice(0, arrStart) + JSON.stringify(kept) + sw.slice(arrEnd + 1) + refresh);
       },
     },
   };
@@ -66,7 +79,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      injectRegister: false,
       scope: BASE,
       includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'icons/*.png'],
       // Icon srcs already include BASE; don't treat them as public/-relative files.
@@ -113,9 +126,36 @@ export default defineConfig({
         modifyURLPrefix: {
           '': BASE,
         },
-        navigateFallback: `${BASE}index.html`,
-        navigateFallbackAllowlist: [/^\/swingframe\/?/],
-        directoryIndex: 'index.html',
+        navigateFallback: null,
+        directoryIndex: null,
+        globIgnores: ['**/node_modules/**/*', '**/sw.js', '**/workbox-*.js', '**/registerSW.js'],
+        manifestTransforms: [
+          (entries) => ({
+            manifest: entries.filter((entry) => {
+              const url = typeof entry === 'string' ? entry : entry.url;
+              return url !== 'index.html' && !url.endsWith('/index.html') && !url.endsWith('/sw.js') && url !== 'sw.js' && !url.endsWith('/registerSW.js');
+            }),
+            warnings: [],
+          }),
+        ],
+        runtimeCaching: [
+          {
+            urlPattern: /\/swingframe\/sw\.js$/,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: ({ request, url }: { request: Request; url: URL }) =>
+              request.mode === 'navigate' ||
+              url.pathname === '/swingframe/' ||
+              url.pathname === '/swingframe/index.html',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'swingframe-pages',
+              networkTimeoutSeconds: 4,
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+        ],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,

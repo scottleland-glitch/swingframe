@@ -3,11 +3,18 @@ import { ZOOM_MAX, ZOOM_MIN } from '../constants';
 import { paint } from '../draw';
 import { uid } from '../format';
 import { exitIfNativeFullscreen, loadInlineSource, markInline, mediaErrorMessage, paintFirstFrame } from '../inlineVideo';
+import { blobWithMime, mimeAttempts } from '../videoFile';
 import {
+  angleFromFingers,
   applyHandle,
+  boxFromFingers,
+  circleFromFingers,
   clamp,
+  clampPt,
   hitTest,
+  lineFromFingers,
   pxDist,
+  transformDrawing,
   translateDrawing,
   type HandleName,
 } from '../geometry';
@@ -39,6 +46,19 @@ type Drag =
   | { kind: 'angle'; x: number; y: number };
 
 type Pinch = { startDist: number; startScale: number; localX: number; localY: number };
+
+type TwoFinger =
+  | { kind: 'place' }
+  | {
+      kind: 'adjust';
+      id: string;
+      orig: Drawing;
+      pivot: Pt;
+      startMid: Pt;
+      startDist: number;
+      startAng: number;
+      latest: Drawing[] | null;
+    };
 
 export const VideoStage = forwardRef<
   VideoEngine,
@@ -104,6 +124,7 @@ export const VideoStage = forwardRef<
   const anglePtsRef = useRef<Pt[]>([]);
   const dragRef = useRef<Drag | null>(null);
   const pinchRef = useRef<Pinch | null>(null);
+  const twoRef = useRef<TwoFinger | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const suppress = useRef(false);
   const draftFlag = useRef(false);
@@ -397,6 +418,131 @@ export const VideoStage = forwardRef<
     );
   }
 
+  const TWO_FINGER_TOOLS: Tool[] = ['line', 'pen', 'angle', 'circle', 'box', 'hline', 'vline'];
+
+  function fingerPair(): { a: Pt; b: Pt; dist: number; ang: number; mid: Pt } | null {
+    const pts = [...pointers.current.values()];
+    if (pts.length < 2) return null;
+    const a = normFromClient(pts[0].x, pts[0].y);
+    const b = normFromClient(pts[1].x, pts[1].y);
+    if (!a || !b) return null;
+    return {
+      a,
+      b,
+      dist: Math.max(1, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)),
+      ang: Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x),
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+    };
+  }
+
+  function updatePlaceDraft(pair: { a: Pt; b: Pt; mid: Pt }) {
+    const toolName = toolRef.current;
+    const ink = colorRef.current;
+    const rect = canvasRect();
+    if (!rect) return;
+    if (toolName === 'line') {
+      const ends = lineFromFingers(pair.a, pair.b);
+      publishDraft({ id: 'draft', type: 'line', color: ink, ...ends });
+    } else if (toolName === 'circle') {
+      const circle = circleFromFingers(pair.a, pair.b, rect.width, rect.height);
+      publishDraft({ id: 'draft', type: 'circle', color: ink, ...circle });
+    } else if (toolName === 'box') {
+      const box = boxFromFingers(pair.a, pair.b);
+      publishDraft({ id: 'draft', type: 'box', color: ink, ...box });
+    } else if (toolName === 'angle') {
+      const angle = angleFromFingers(pair.a, pair.b);
+      publishDraft({ id: 'draft', type: 'angle', color: ink, ...angle });
+    } else if (toolName === 'hline') {
+      publishDraft({ id: 'draft', type: 'hline', color: ink, y: clamp((pair.a.y + pair.b.y) / 2, 0, 1) });
+    } else if (toolName === 'vline') {
+      publishDraft({ id: 'draft', type: 'vline', color: ink, x: clamp((pair.a.x + pair.b.x) / 2, 0, 1) });
+    } else if (toolName === 'pen') {
+      const mid = clampPt(pair.mid);
+      const current = draftRef.current;
+      if (!current || current.type !== 'pen') {
+        publishDraft({ id: 'draft', type: 'pen', color: ink, points: [mid] });
+        return;
+      }
+      const last = current.points[current.points.length - 1];
+      if (last && pxDist(last, mid, rect.width, rect.height) < 2) return;
+      if (current.points.length >= 1500) return;
+      publishDraft({ ...current, points: [...current.points, mid] });
+    }
+  }
+
+  function beginTwoFinger() {
+    dragRef.current = null;
+    publishAngle([]);
+    setCursor(null);
+    const pair = fingerPair();
+    const rect = canvasRect();
+    const toolName = toolRef.current;
+    if (!pair || !rect) return;
+    if (toolName === 'select') {
+      const current = drawingsRef.current;
+      const touch = (p: Pt) => hitTest(current, p, rect.width, rect.height, null);
+      const hits = [touch(pair.mid), touch(pair.a), touch(pair.b)];
+      const selected = selectedRef.current;
+      const onSelected = selected != null && hits.some((hit) => hit?.id === selected);
+      const id = onSelected ? selected : (hits.find((hit) => hit)?.id ?? null);
+      const orig = id ? current.find((drawing) => drawing.id === id) : undefined;
+      if (!orig || !id) {
+        twoRef.current = null;
+        return;
+      }
+      onSelectRef.current(id);
+      twoRef.current = {
+        kind: 'adjust',
+        id,
+        orig,
+        pivot: pair.mid,
+        startMid: pair.mid,
+        startDist: pair.dist,
+        startAng: pair.ang,
+        latest: null,
+      };
+      return;
+    }
+    if (!TWO_FINGER_TOOLS.includes(toolName)) return;
+    pause();
+    publishDraft(null);
+    twoRef.current = { kind: 'place' };
+    updatePlaceDraft(pair);
+  }
+
+  function moveTwoFinger() {
+    const pair = fingerPair();
+    const rect = canvasRect();
+    const two = twoRef.current;
+    if (!pair || !rect || !two) return;
+    if (two.kind === 'place') {
+      updatePlaceDraft(pair);
+      return;
+    }
+    const dx = pair.mid.x - two.startMid.x;
+    const dy = pair.mid.y - two.startMid.y;
+    const scale = pair.dist / two.startDist;
+    let rot = pair.ang - two.startAng;
+    if (rot > Math.PI) rot -= Math.PI * 2;
+    if (rot < -Math.PI) rot += Math.PI * 2;
+    const moved = transformDrawing(two.orig, two.pivot, scale, rot, dx, dy, rect.width, rect.height);
+    const latest = drawingsRef.current.map((drawing) => (drawing.id === two.id ? moved : drawing));
+    two.latest = latest;
+    setLive(latest);
+  }
+
+  function finishTwoFinger() {
+    const two = twoRef.current;
+    twoRef.current = null;
+    if (!two) return;
+    if (two.kind === 'place') {
+      finishDraw();
+      return;
+    }
+    setLive(null);
+    if (two.latest) onCommitRef.current(two.latest);
+  }
+
   function beginPinch() {
     const pts = [...pointers.current.values()];
     const stage = stageRef.current?.getBoundingClientRect();
@@ -453,6 +599,8 @@ export const VideoStage = forwardRef<
     const rect = canvasRect();
     const drawingHere = rect != null && onVideo(event.clientX, event.clientY, p);
 
+    if (TWO_FINGER_TOOLS.includes(active)) return;
+
     if (active === 'erase') {
       if (drawingHere && rect) {
         pause();
@@ -502,15 +650,6 @@ export const VideoStage = forwardRef<
           return;
         }
         onSelectRef.current(null);
-      }
-      if (zoomRef.current.scale > 1.01) {
-        dragRef.current = {
-          kind: 'pan',
-          x: event.clientX,
-          y: event.clientY,
-          ox: zoomRef.current.x,
-          oy: zoomRef.current.y,
-        };
       }
       return;
     }
@@ -611,6 +750,11 @@ export const VideoStage = forwardRef<
     } else if (shape.type === 'box') {
       if (shape.w * rect.width < 8 && shape.h * rect.height < 8) return;
       commit({ ...shape, id: uid() });
+    } else if (shape.type === 'angle') {
+      if (pxDist(shape.a, shape.v, rect.width, rect.height) < 8 && pxDist(shape.b, shape.v, rect.width, rect.height) < 8) {
+        return;
+      }
+      commit({ ...shape, id: uid() });
     } else if (shape.type === 'hline' || shape.type === 'vline') {
       commit({ ...shape, id: uid() });
     }
@@ -653,16 +797,41 @@ export const VideoStage = forwardRef<
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const url = URL.createObjectURL(blob);
+    const types = mimeAttempts(blob.type);
     let cancelled = false;
+    let url = '';
+    let attempt = 0;
+    let timer = 0;
     setMediaError(null);
     const showFrame = () => {
       if (cancelled) return;
       if (video.videoWidth > 0) setVideoSize({ w: video.videoWidth, h: video.videoHeight });
       if (video.readyState >= 2) paintFirstFrame(video);
     };
+    const begin = () => {
+      if (url) URL.revokeObjectURL(url);
+      window.clearTimeout(timer);
+      const typed = blobWithMime(blob, types[attempt] ?? 'video/mp4');
+      url = URL.createObjectURL(typed);
+      loadInlineSource(video, url);
+      video.playbackRate = rateRef.current;
+      timer = window.setTimeout(() => {
+        if (cancelled || video.readyState >= 1 || video.error) return;
+        if (attempt + 1 < types.length) {
+          attempt += 1;
+          begin();
+          return;
+        }
+        setMediaError('This phone did not start loading that video.');
+      }, 8000);
+    };
     const onErr = () => {
       if (cancelled) return;
+      if (attempt + 1 < types.length) {
+        attempt += 1;
+        begin();
+        return;
+      }
       setMediaError(mediaErrorMessage(video));
     };
     const onNativeFullscreen = () => {
@@ -675,12 +844,7 @@ export const VideoStage = forwardRef<
     video.addEventListener('error', onErr);
     video.addEventListener('webkitbeginfullscreen', onNativeFullscreen);
     video.addEventListener('timeupdate', onTime);
-    loadInlineSource(video, url);
-    video.playbackRate = rateRef.current;
-    const timer = window.setTimeout(() => {
-      if (cancelled || video.readyState >= 1 || video.error) return;
-      setMediaError('This phone did not start loading that video.');
-    }, 8000);
+    begin();
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -694,7 +858,7 @@ export const VideoStage = forwardRef<
       video.pause();
       video.removeAttribute('src');
       video.load();
-      URL.revokeObjectURL(url);
+      if (url) URL.revokeObjectURL(url);
     };
     // rate is applied by the rate effect; the blob effect only needs the initial value.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -841,8 +1005,22 @@ export const VideoStage = forwardRef<
     getZoom: () => zoomRef.current.scale,
   };
 
-  const angleHint =
-    anglePts.length === 0 ? 'Tap the first point' : anglePts.length === 1 ? 'Tap the joint' : 'Tap the other end';
+  const gestureHint =
+    tool === 'line'
+      ? 'Two fingers. Each finger is one end of the line.'
+      : tool === 'circle' || tool === 'box'
+        ? 'Two fingers. Pinch to size, drag to place.'
+        : tool === 'angle'
+          ? 'Two fingers set the arms. The joint sits between them.'
+          : tool === 'pen'
+            ? 'Two fingers. The stroke follows between them.'
+            : tool === 'hline'
+              ? 'Two fingers place the level line.'
+              : tool === 'vline'
+                ? 'Two fingers place the plumb line.'
+                : tool === 'select'
+                  ? 'Two fingers move, pinch, or turn. Drag a handle to fine-tune.'
+                  : null;
 
   return (
     <div
@@ -854,7 +1032,8 @@ export const VideoStage = forwardRef<
         event.currentTarget.setPointerCapture(event.pointerId);
         pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
         if (pointers.current.size >= 2) {
-          beginPinch();
+          if (panModeRef.current) beginPinch();
+          else beginTwoFinger();
           return;
         }
         beginGesture(event);
@@ -862,11 +1041,12 @@ export const VideoStage = forwardRef<
       onPointerMove={(event) => {
         if (!pointers.current.has(event.pointerId)) return;
         pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-        if (pointers.current.size >= 2 && pinchRef.current) {
-          movePinch();
+        if (pointers.current.size >= 2) {
+          if (panModeRef.current && pinchRef.current) movePinch();
+          else moveTwoFinger();
           return;
         }
-        if (suppress.current || pinchRef.current) return;
+        if (suppress.current || pinchRef.current || twoRef.current) return;
         moveGesture(event);
       }}
       onPointerUp={(event) => {
@@ -874,6 +1054,14 @@ export const VideoStage = forwardRef<
         if (pinchRef.current) {
           if (pointers.current.size < 2) {
             pinchRef.current = null;
+            suppress.current = true;
+            dragRef.current = null;
+          }
+          return;
+        }
+        if (twoRef.current) {
+          if (pointers.current.size < 2) {
+            finishTwoFinger();
             suppress.current = true;
             dragRef.current = null;
           }
@@ -891,6 +1079,7 @@ export const VideoStage = forwardRef<
       onPointerCancel={(event) => {
         pointers.current.delete(event.pointerId);
         pinchRef.current = null;
+        twoRef.current = null;
         dragRef.current = null;
         publishDraft(null);
         setLive(null);
@@ -929,7 +1118,7 @@ export const VideoStage = forwardRef<
         )}
         <canvas ref={canvasRef} />
       </div>
-      {tool === 'angle' && <div className="gesture-chip">{angleHint}</div>}
+      {gestureHint && !panMode && <div className="gesture-chip">{gestureHint}</div>}
       {mediaError && <div className="stage-error">{mediaError}</div>}
     </div>
   );

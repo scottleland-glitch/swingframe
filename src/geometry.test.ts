@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { Drawing } from './types';
-import { angleDegrees, applyHandle, extendLine, hitTest, translateDrawing } from './geometry';
+import {
+  angleDegrees,
+  angleFromFingers,
+  applyHandle,
+  boxFromFingers,
+  circleFromFingers,
+  extendLine,
+  hitTest,
+  lineFromFingers,
+  transformDrawing,
+  translateDrawing,
+} from './geometry';
 
 describe('angleDegrees', () => {
   it('measures a right angle, a straight line, and a folded line', () => {
@@ -72,5 +83,49 @@ describe('hitTest and edits', () => {
     expect(resized.y).toBeCloseTo(0.2);
     expect(resized.w).toBeCloseTo(0.6);
     expect(resized.h).toBeCloseTo(0.5);
+  });
+});
+
+describe('two-finger placement', () => {
+  it('puts each finger on a line end', () => {
+    expect(lineFromFingers({ x: 0.2, y: 0.8 }, { x: 0.7, y: 0.3 })).toEqual({
+      a: { x: 0.2, y: 0.8 },
+      b: { x: 0.7, y: 0.3 },
+    });
+  });
+
+  it('sizes a circle and a box from the two fingers', () => {
+    const circle = circleFromFingers({ x: 0.2, y: 0.5 }, { x: 0.6, y: 0.5 }, 100, 100);
+    expect(circle.c).toEqual({ x: 0.4, y: 0.5 });
+    expect(circle.r).toBeCloseTo(0.2);
+    const box = boxFromFingers({ x: 0.7, y: 0.2 }, { x: 0.2, y: 0.6 });
+    expect(box.x).toBeCloseTo(0.2);
+    expect(box.y).toBeCloseTo(0.2);
+    expect(box.w).toBeCloseTo(0.5);
+    expect(box.h).toBeCloseTo(0.4);
+  });
+
+  it('puts the angle joint between the fingers', () => {
+    expect(angleFromFingers({ x: 0, y: 0.2 }, { x: 0.4, y: 0.8 })).toEqual({
+      a: { x: 0, y: 0.2 },
+      v: { x: 0.2, y: 0.5 },
+      b: { x: 0.4, y: 0.8 },
+    });
+  });
+
+  it('turns a line a quarter turn around the pivot', () => {
+    const line: Drawing = {
+      id: 'l',
+      type: 'line',
+      color: '#fff',
+      a: { x: 0.4, y: 0.5 },
+      b: { x: 0.6, y: 0.5 },
+    };
+    const turned = transformDrawing(line, { x: 0.5, y: 0.5 }, 1, Math.PI / 2, 0, 0, 100, 100);
+    if (turned.type !== 'line') throw new Error('expected a line');
+    expect(turned.a.x).toBeCloseTo(0.5);
+    expect(turned.a.y).toBeCloseTo(0.4);
+    expect(turned.b.x).toBeCloseTo(0.5);
+    expect(turned.b.y).toBeCloseTo(0.6);
   });
 });

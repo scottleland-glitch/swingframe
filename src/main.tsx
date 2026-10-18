@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { requestPersistentStorage } from './platform';
+import { startServiceWorkerUpdates } from './swUpdate';
 import './styles.css';
 
 const root = document.getElementById('root');
@@ -14,9 +15,4 @@ createRoot(root).render(
 );
 
 void requestPersistentStorage();
-
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    void navigator.serviceWorker.ready.then((registration) => registration.update()).catch(() => undefined);
-  });
-}
+startServiceWorkerUpdates();

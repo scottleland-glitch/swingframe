@@ -140,16 +140,9 @@ function handlesOf(d: Drawing, w: number, h: number): { name: HandleName; x: num
       ];
     }
     case 'box': {
-      const x = d.x * w;
-      const y = d.y * h;
-      const bw = d.w * w;
-      const bh = d.h * h;
-      return [
-        { name: 'nw', x, y },
-        { name: 'ne', x: x + bw, y },
-        { name: 'sw', x, y: y + bh },
-        { name: 'se', x: x + bw, y: y + bh },
-      ];
+      const frame = boxFrame(d, w, h);
+      const names: HandleName[] = ['nw', 'ne', 'sw', 'se'];
+      return frame.corners.map((corner, i) => ({ name: names[i], x: corner.x, y: corner.y }));
     }
     default:
       return [];
@@ -188,11 +181,14 @@ function bodyHit(d: Drawing, px: number, py: number, w: number, h: number): bool
       return Math.hypot(px - c.x, py - c.y) <= r + BODY_PX;
     }
     case 'box': {
-      const x = d.x * w;
-      const y = d.y * h;
-      const bw = d.w * w;
-      const bh = d.h * h;
-      return px >= x - BODY_PX && px <= x + bw + BODY_PX && py >= y - BODY_PX && py <= y + bh + BODY_PX;
+      const frame = boxFrame(d, w, h);
+      const dx = px - frame.cx;
+      const dy = py - frame.cy;
+      const cos = Math.cos(-frame.rot);
+      const sin = Math.sin(-frame.rot);
+      const lx = dx * cos - dy * sin;
+      const ly = dx * sin + dy * cos;
+      return Math.abs(lx) <= frame.bw / 2 + BODY_PX && Math.abs(ly) <= frame.bh / 2 + BODY_PX;
     }
     case 'hline':
       return Math.abs(py - d.y * h) <= BODY_PX;
@@ -224,6 +220,104 @@ export function hitTest(
     if (bodyHit(drawings[i], px, py, w, h)) return { id: drawings[i].id, part: 'body' };
   }
   return null;
+}
+
+export function clampPt(p: Pt): Pt {
+  return { x: clamp(p.x, 0, 1), y: clamp(p.y, 0, 1) };
+}
+
+/** Each finger is one end of the plane line. */
+export function lineFromFingers(a: Pt, b: Pt): { a: Pt; b: Pt } {
+  return { a: clampPt(a), b: clampPt(b) };
+}
+
+/** Center is the midpoint. Radius is half the distance, as a fraction of width. */
+export function circleFromFingers(a: Pt, b: Pt, w: number, h: number): { c: Pt; r: number } {
+  const c = clampPt({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const r = pxDist(a, b, w, h) / 2 / Math.max(w, 1);
+  return { c, r: Math.max(0.004, r) };
+}
+
+/** The two fingers are opposite corners. */
+export function boxFromFingers(a: Pt, b: Pt): { x: number; y: number; w: number; h: number } {
+  const left = clamp(Math.min(a.x, b.x), 0, 1);
+  const top = clamp(Math.min(a.y, b.y), 0, 1);
+  const right = clamp(Math.max(a.x, b.x), 0, 1);
+  const bottom = clamp(Math.max(a.y, b.y), 0, 1);
+  return { x: left, y: top, w: Math.max(0.004, right - left), h: Math.max(0.004, bottom - top) };
+}
+
+/** The joint sits halfway between the fingers. Each finger is the end of an arm. */
+export function angleFromFingers(a: Pt, b: Pt): { a: Pt; v: Pt; b: Pt } {
+  const v = clampPt({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  return { a: clampPt(a), v, b: clampPt(b) };
+}
+
+function mapPoint(p: Pt, pivot: Pt, scale: number, rot: number, dx: number, dy: number, w: number, h: number): Pt {
+  const px = (p.x - pivot.x) * w;
+  const py = (p.y - pivot.y) * h;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  const rx = (px * cos - py * sin) * scale;
+  const ry = (px * sin + py * cos) * scale;
+  return { x: pivot.x + dx + rx / Math.max(w, 1), y: pivot.y + dy + ry / Math.max(h, 1) };
+}
+
+/** Pinch, twist, and drag. Scale and rotation are around the pivot, then the pivot shifts by dx/dy. */
+export function transformDrawing(
+  d: Drawing,
+  pivot: Pt,
+  scale: number,
+  rot: number,
+  dx: number,
+  dy: number,
+  w: number,
+  h: number,
+): Drawing {
+  const safeScale = clamp(scale, 0.15, 8);
+  const map = (p: Pt) => mapPoint(p, pivot, safeScale, rot, dx, dy, w, h);
+  switch (d.type) {
+    case 'line':
+      return { ...d, a: map(d.a), b: map(d.b) };
+    case 'pen':
+      return { ...d, points: d.points.map(map) };
+    case 'angle':
+      return { ...d, a: map(d.a), v: map(d.v), b: map(d.b) };
+    case 'circle':
+      return { ...d, c: map(d.c), r: Math.max(0.004, d.r * safeScale) };
+    case 'box': {
+      const c = map({ x: d.x + d.w / 2, y: d.y + d.h / 2 });
+      const nw = Math.max(0.004, d.w * safeScale);
+      const nh = Math.max(0.004, d.h * safeScale);
+      return { ...d, x: c.x - nw / 2, y: c.y - nh / 2, w: nw, h: nh, rot: (d.rot ?? 0) + rot };
+    }
+    case 'hline':
+      return { ...d, y: clamp(d.y + dy, 0, 1) };
+    case 'vline':
+      return { ...d, x: clamp(d.x + dx, 0, 1) };
+    default: {
+      const never: never = d;
+      return never;
+    }
+  }
+}
+
+export function boxFrame(d: Extract<Drawing, { type: 'box' }>, w: number, h: number) {
+  const cx = (d.x + d.w / 2) * w;
+  const cy = (d.y + d.h / 2) * h;
+  const bw = d.w * w;
+  const bh = d.h * h;
+  const rot = d.rot ?? 0;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  const local: [number, number][] = [
+    [-bw / 2, -bh / 2],
+    [bw / 2, -bh / 2],
+    [-bw / 2, bh / 2],
+    [bw / 2, bh / 2],
+  ];
+  const corners = local.map(([x, y]) => ({ x: cx + x * cos - y * sin, y: cy + x * sin + y * cos }));
+  return { cx, cy, bw, bh, rot, corners };
 }
 
 export function translateDrawing(d: Drawing, dx: number, dy: number): Drawing {
@@ -276,6 +370,22 @@ export function applyHandle(d: Drawing, handle: HandleName, p: Pt, w: number, h:
       return d;
     }
     case 'box': {
+      if (d.rot) {
+        const frame = boxFrame(d, w, h);
+        const dx = p.x * w - frame.cx;
+        const dy = p.y * h - frame.cy;
+        const cos = Math.cos(-frame.rot);
+        const sin = Math.sin(-frame.rot);
+        const lx = dx * cos - dy * sin;
+        const ly = dx * sin + dy * cos;
+        const hw = Math.max(2, Math.abs(lx));
+        const hh = Math.max(2, Math.abs(ly));
+        const nw = Math.max(0.004, (hw * 2) / Math.max(w, 1));
+        const nh = Math.max(0.004, (hh * 2) / Math.max(h, 1));
+        const cx = d.x + d.w / 2;
+        const cy = d.y + d.h / 2;
+        return { ...d, x: cx - nw / 2, y: cy - nh / 2, w: nw, h: nh };
+      }
       const x2 = d.x + d.w;
       const y2 = d.y + d.h;
       let left = d.x;

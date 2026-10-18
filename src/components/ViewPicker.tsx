@@ -20,7 +20,7 @@ export function ViewPicker({
       >
         <Icon name="dtl" />
         <span>Down the Line</span>
-        <small>Behind the ball</small>
+        <small>{value === 'dtl' ? 'Selected' : 'Behind the ball'}</small>
       </button>
       <button
         type="button"
@@ -31,7 +31,7 @@ export function ViewPicker({
       >
         <Icon name="face" />
         <span>Face On</span>
-        <small>Looking at the golfer</small>
+        <small>{value === 'face' ? 'Selected' : 'Looking at the golfer'}</small>
       </button>
     </div>
   );
