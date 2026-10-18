@@ -610,6 +610,7 @@ describe('tracer on a swing', () => {
     expect(tracerIsSet(null, null)).toBe(false);
     expect(tracerIsSet(emptyShot(), { ...defaultTracer(), impactTime: 1.2 })).toBe(true);
     expect(tracerIsSet(emptyShot(), { ...defaultTracer(), ball: { x: 0.5, y: 0.7 } })).toBe(true);
+    expect(tracerIsSet(emptyShot(), { ...defaultTracer(), manualStart: { x: 0.5, y: 0.7 } })).toBe(true);
     expect(tracerIsSet({ ...emptyShot(), ballSpeed: 167 }, defaultTracer())).toBe(true);
     expect(tracerIsSet(emptyShot(), { ...defaultTracer(), cameraHeight: 2 })).toBe(true);
   });

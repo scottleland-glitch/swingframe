@@ -1,7 +1,16 @@
 import type { Pt, ShotData, TracerCalibration } from '../types';
 import type { ToeLine } from './aimSuggest';
 
-export type SetupPhase = 'aim' | 'ball' | 'horizon' | 'impact' | 'edit';
+export type SetupPhase =
+  | 'aim'
+  | 'ball'
+  | 'horizon'
+  | 'start'
+  | 'apex'
+  | 'finish'
+  | 'impact'
+  | 'lock'
+  | 'edit';
 
 const LAUNCH_FIELDS = ['ballSpeed', 'vla', 'spin', 'spinAxis', 'hla'] as const;
 
@@ -18,12 +27,22 @@ function aimConfirmed(tracer: TracerCalibration): boolean {
 /**
  * Where the tracer button should land. A finished setup opens the markers
  * for dragging. Anything missing resumes that step instead of starting over.
+ * Lock is the last guided step, and only after this version has started that flow.
  */
 export function setupStep(tracer: TracerCalibration): SetupPhase {
+  if (tracer.mode === 'manual') {
+    if (!tracer.manualStart) return 'start';
+    if (!tracer.manualApex) return 'apex';
+    if (!tracer.manualFinish) return 'finish';
+    if (tracer.impactTime == null) return 'impact';
+    if (tracer.setupDone !== true) return 'lock';
+    return 'edit';
+  }
   if (!aimConfirmed(tracer)) return 'aim';
   if (!tracer.ball) return 'ball';
   if (!tracer.ground) return 'horizon';
   if (tracer.impactTime == null) return 'impact';
+  if (tracer.mode === 'data' && tracer.setupDone !== true) return 'lock';
   return 'edit';
 }
 

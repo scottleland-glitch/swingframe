@@ -686,6 +686,9 @@ textarea { resize: vertical; }
 .player-screen.is-setup:not(.is-setup-impact) .time-pill {
   display: none;
 }
+.player-screen.is-setup.is-setup-edit .tracer-quick {
+  display: flex;
+}
 .setup-chrome {
   position: absolute;
   inset: 0;
@@ -722,8 +725,11 @@ textarea { resize: vertical; }
 .setup-redo {
   position: absolute;
   left: 50%;
-  bottom: calc(28px + var(--safe-bottom));
+  bottom: calc(78px + var(--safe-bottom));
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-height: 44px;
   padding: 0 18px;
   border: 0;
@@ -733,6 +739,46 @@ textarea { resize: vertical; }
   font-weight: 700;
   font-size: 15px;
 }
+.setup-impact .icon { width: 18px; height: 18px; }
+.manual-pill {
+  position: absolute;
+  z-index: 2;
+  left: calc(12px + var(--safe-left));
+  bottom: calc(16px + var(--safe-bottom));
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right));
+  padding: 4px;
+  border-radius: 18px;
+  background: rgba(20, 20, 20, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #fff;
+}
+.manual-pill.is-open { right: calc(12px + var(--safe-right)); }
+.manual-pill button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.manual-pill.is-open button {
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 11px;
+}
+.manual-pill button .icon { width: 22px; height: 22px; }
+.manual-pill button[aria-pressed='true'] { background: rgba(255, 255, 255, 0.16); }
 .setup-redo:disabled { opacity: 0.45; }
 .bar-icon.needs-numbers { position: relative; }
 .bar-icon.needs-numbers::after {

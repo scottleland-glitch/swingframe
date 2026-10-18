@@ -5,6 +5,8 @@ export interface TracerMarks {
   ball: Pt | null;
   target: Pt | null;
   ground?: Pt | null;
+  /** Manual trace taps. Drawn with Show aim, not during setup. */
+  manual?: { start: Pt; apex: Pt; finish: Pt } | null;
 }
 
 function slicePath(path: TracerPoint[], elapsed: number | null): { x: number; y: number }[] {
@@ -146,6 +148,14 @@ export function paintTracer(
     ctx.arc(x, y, 3.5, 0, Math.PI * 2);
     ctx.stroke();
     label(marks.ground, 'Ground', '#b6f5c8');
+  }
+  if (marks.manual) {
+    ring(marks.manual.start, '#ffe14a');
+    label(marks.manual.start, 'Start', '#ffe14a');
+    ring(marks.manual.apex, '#7ee0ff');
+    label(marks.manual.apex, 'Apex', '#7ee0ff');
+    ring(marks.manual.finish, '#b6f5c8');
+    label(marks.manual.finish, 'Finish', '#b6f5c8');
   }
   ctx.restore();
 }

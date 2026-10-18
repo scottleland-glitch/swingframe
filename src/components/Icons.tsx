@@ -39,7 +39,10 @@ export type IconName =
   | 'crosshair'
   | 'lock'
   | 'unlock'
-  | 'numbers';
+  | 'numbers'
+  | 'shapeDraw'
+  | 'shapeStraight'
+  | 'shapeFade';
 
 export function Icon({ name }: { name: IconName }) {
   return (
@@ -296,6 +299,12 @@ function paths(name: IconName) {
           123
         </text>
       );
+    case 'shapeDraw':
+      return <path d="M8 20C16 16 18 10 10 4" />;
+    case 'shapeStraight':
+      return <path d="M12 20C13 14 13 9 12 4" />;
+    case 'shapeFade':
+      return <path d="M16 20C8 16 6 10 14 4" />;
     default: {
       const never: never = name;
       return never;

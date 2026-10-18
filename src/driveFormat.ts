@@ -187,6 +187,12 @@ function sanitizeTracer(value: unknown): TracerCalibration | null {
     locked: rec.locked === true,
     showAim: rec.showAim === true,
     showTracer: rec.showTracer !== false,
+    mode: rec.mode === 'manual' ? 'manual' : rec.mode === 'data' ? 'data' : undefined,
+    shape: rec.shape === 'draw' || rec.shape === 'straight' || rec.shape === 'fade' ? rec.shape : null,
+    manualStart: sanitizePoint(rec.manualStart),
+    manualApex: sanitizePoint(rec.manualApex),
+    manualFinish: sanitizePoint(rec.manualFinish),
+    setupDone: rec.setupDone === true,
   };
 }
 

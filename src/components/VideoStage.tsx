@@ -24,6 +24,8 @@ import {
 } from '../geometry';
 import type { Drawing, Pt, Tool } from '../types';
 
+export type EditWhich = 'ball' | 'target' | 'ground' | 'start' | 'apex' | 'finish';
+
 export type VideoEngine = {
   play: () => Promise<void>;
   pause: () => void;
@@ -100,8 +102,15 @@ export const VideoStage = forwardRef<
     setupMarker?: { point: Pt; kind: 'ball' | 'target' | 'ground'; toe?: [Pt, Pt]; parallel?: [Pt, Pt] } | null;
     onSetupGesture?: (point: Pt, phase: 'move' | 'up' | 'tap') => void;
     /** Finished setup: drag the existing markers. Not drawn into exports. */
-    editMarkers?: { ball: Pt | null; target: Pt | null; ground: Pt | null } | null;
-    onEditGesture?: (which: 'ball' | 'target' | 'ground', point: Pt, phase: 'move' | 'up') => void;
+    editMarkers?: {
+      ball: Pt | null;
+      target: Pt | null;
+      ground: Pt | null;
+      start?: Pt | null;
+      apex?: Pt | null;
+      finish?: Pt | null;
+    } | null;
+    onEditGesture?: (which: EditWhich, point: Pt, phase: 'move' | 'up') => void;
     /** Setup owns the picture, so drawing gestures stay off. */
     freezeDraw?: boolean;
     immersive?: boolean;
@@ -194,7 +203,7 @@ export const VideoStage = forwardRef<
   const onSetupGestureRef = useRef(onSetupGesture);
   const editMarkersRef = useRef(editMarkers);
   const onEditGestureRef = useRef(onEditGesture);
-  const setupDragRef = useRef<{ x: number; y: number; moved: boolean; which: 'ball' | 'target' | 'ground' | null } | null>(null);
+  const setupDragRef = useRef<{ x: number; y: number; moved: boolean; which: EditWhich | null } | null>(null);
   const freezeDrawRef = useRef(freezeDraw);
   const placingRef = useRef(false);
   const placingKind = useRef<'ball' | 'target' | 'ground' | 'suggest' | null>(null);
@@ -512,14 +521,17 @@ export const VideoStage = forwardRef<
     return at != null && Math.hypot(clientX - at.x, clientY - at.y) <= reach;
   }
 
-  function editHit(clientX: number, clientY: number): 'ball' | 'target' | 'ground' | null {
+  function editHit(clientX: number, clientY: number): EditWhich | null {
     const markers = editMarkersRef.current;
     if (!markers) return null;
-    let best: { kind: 'ball' | 'target' | 'ground'; distance: number } | null = null;
-    const choices: { kind: 'ball' | 'target' | 'ground'; point: Pt | null }[] = [
+    let best: { kind: EditWhich; distance: number } | null = null;
+    const choices: { kind: EditWhich; point: Pt | null }[] = [
       { kind: 'ball', point: markers.ball },
       { kind: 'target', point: markers.target },
       { kind: 'ground', point: markers.ground },
+      { kind: 'start', point: markers.start ?? null },
+      { kind: 'apex', point: markers.apex ?? null },
+      { kind: 'finish', point: markers.finish ?? null },
     ];
     for (const choice of choices) {
       if (!choice.point || !nearMarker(clientX, clientY, choice.point, 64)) continue;
@@ -1184,6 +1196,9 @@ export const VideoStage = forwardRef<
         ball: editMarkers.ball ? overlayAt(editMarkers.ball) : null,
         target: editMarkers.target ? overlayAt(editMarkers.target) : null,
         ground: editMarkers.ground ? overlayAt(editMarkers.ground) : null,
+        start: editMarkers.start ? overlayAt(editMarkers.start) : null,
+        apex: editMarkers.apex ? overlayAt(editMarkers.apex) : null,
+        finish: editMarkers.finish ? overlayAt(editMarkers.finish) : null,
       }
     : null;
 
@@ -1479,6 +1494,21 @@ export const VideoStage = forwardRef<
           )}
           {editOnStage.ground && (
             <div className="aim-reticle" data-testid="edit-marker-ground" data-kind="ground" style={{ left: editOnStage.ground.x, top: editOnStage.ground.y }}>
+              <span className="aim-reticle-ring" />
+            </div>
+          )}
+          {editOnStage.start && (
+            <div className="aim-reticle" data-testid="edit-marker-start" data-kind="ball" style={{ left: editOnStage.start.x, top: editOnStage.start.y }}>
+              <span className="aim-reticle-ring" />
+            </div>
+          )}
+          {editOnStage.apex && (
+            <div className="aim-reticle" data-testid="edit-marker-apex" data-kind="suggest" style={{ left: editOnStage.apex.x, top: editOnStage.apex.y }}>
+              <span className="aim-reticle-ring" />
+            </div>
+          )}
+          {editOnStage.finish && (
+            <div className="aim-reticle" data-testid="edit-marker-finish" data-kind="ground" style={{ left: editOnStage.finish.x, top: editOnStage.finish.y }}>
               <span className="aim-reticle-ring" />
             </div>
           )}

@@ -15,6 +15,23 @@ describe('tracer setup', () => {
     const withGround = { ...withBall, ground: { x: 0.5, y: 0.42 } };
     expect(setupStep(withGround)).toBe('impact');
     expect(setupStep({ ...withGround, impactTime: 1.2 })).toBe('edit');
+    const guided = { ...withGround, mode: 'data' as const, impactTime: 1.2 };
+    expect(setupStep(guided)).toBe('lock');
+    expect(setupStep({ ...guided, setupDone: true })).toBe('edit');
+  });
+
+  it('walks a manual trace through start, apex, finish, impact, and lock', () => {
+    const base = { ...defaultTracer(), mode: 'manual' as const, shape: 'fade' as const };
+    expect(setupStep(base)).toBe('start');
+    const started = { ...base, manualStart: { x: 0.5, y: 0.72 } };
+    expect(setupStep(started)).toBe('apex');
+    const peaked = { ...started, manualApex: { x: 0.4, y: 0.36 } };
+    expect(setupStep(peaked)).toBe('finish');
+    const finished = { ...peaked, manualFinish: { x: 0.56, y: 0.5 } };
+    expect(setupStep(finished)).toBe('impact');
+    const hit = { ...finished, impactTime: 0.8 };
+    expect(setupStep(hit)).toBe('lock');
+    expect(setupStep({ ...hit, setupDone: true, locked: true })).toBe('edit');
   });
 
   it('guesses the ball from the toes, and otherwise uses the lower center', () => {

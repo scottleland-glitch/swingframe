@@ -50,6 +50,12 @@ export interface ShotData {
   sources: Partial<Record<ShotField, ShotSource>>;
 }
 
+/** Data uses launch numbers. Manual is a curve through three taps. Older swings are data. */
+export type TracerMode = 'data' | 'manual';
+
+/** Right-handed down-the-line: a draw bows right and finishes left of that bow. */
+export type ShotShape = 'draw' | 'straight' | 'fade';
+
 /** Camera and timing used to draw the tracer on this swing. */
 export interface TracerCalibration {
   ball: Pt | null;
@@ -76,6 +82,16 @@ export interface TracerCalibration {
   showAim?: boolean;
   /** Flight line. Missing or true shows it, so an older swing keeps its tracer. */
   showTracer?: boolean;
+  /** Which tracer this swing uses. Missing means the launch-number tracer. */
+  mode?: TracerMode;
+  /** Draw, straight, or fade. Prefills the manual curve and breaks a tie when the taps are in a line. */
+  shape?: ShotShape | null;
+  /** Manual trace, in video coordinates. The curve passes through these three. */
+  manualStart?: Pt | null;
+  manualApex?: Pt | null;
+  manualFinish?: Pt | null;
+  /** True after Lock in guided setup. Older swings leave this off and are not sent back through that step. */
+  setupDone?: boolean;
 }
 
 export type ViewAngle = 'dtl' | 'face';

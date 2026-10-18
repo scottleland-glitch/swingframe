@@ -308,5 +308,10 @@ export function defaultTracer(): TracerCalibration {
     locked: false,
     showAim: false,
     showTracer: true,
+    shape: null,
+    manualStart: null,
+    manualApex: null,
+    manualFinish: null,
+    setupDone: false,
   };
 }

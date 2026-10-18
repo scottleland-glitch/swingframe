@@ -130,6 +130,12 @@ describe('backup json', () => {
       locked: true,
       showAim: true,
       showTracer: false,
+      mode: 'manual',
+      shape: 'draw',
+      manualStart: { x: 0.5, y: 0.72 },
+      manualApex: { x: 0.6, y: 0.36 },
+      manualFinish: { x: 0.46, y: 0.5 },
+      setupDone: true,
     };
     const parsed = parseBackup(JSON.stringify(toBackup(meta, drive)));
     expect(parsed?.shot?.ballSpeed).toBe(167);
@@ -144,17 +150,31 @@ describe('backup json', () => {
     expect(parsed?.tracer?.locked).toBe(true);
     expect(parsed?.tracer?.showAim).toBe(true);
     expect(parsed?.tracer?.showTracer).toBe(false);
+    expect(parsed?.tracer?.mode).toBe('manual');
+    expect(parsed?.tracer?.shape).toBe('draw');
+    expect(parsed?.tracer?.manualApex).toEqual({ x: 0.6, y: 0.36 });
+    expect(parsed?.tracer?.setupDone).toBe(true);
     const fadedRaw = JSON.parse(JSON.stringify(toBackup(meta, drive))) as { tracer: Record<string, unknown> };
     delete fadedRaw.tracer.showAim;
     delete fadedRaw.tracer.showTracer;
     delete fadedRaw.tracer.ground;
     delete fadedRaw.tracer.aimSuggested;
+    delete fadedRaw.tracer.mode;
+    delete fadedRaw.tracer.shape;
+    delete fadedRaw.tracer.manualStart;
+    delete fadedRaw.tracer.manualApex;
+    delete fadedRaw.tracer.manualFinish;
+    delete fadedRaw.tracer.setupDone;
     const faded = parseBackup(JSON.stringify(fadedRaw));
     expect(faded?.tracer?.showAim).toBe(false);
     expect(faded?.tracer?.showTracer).toBe(true);
     expect(faded?.tracer?.locked).toBe(true);
     expect(faded?.tracer?.ground).toBeNull();
     expect(faded?.tracer?.aimSuggested).toBe(false);
+    expect(faded?.tracer?.mode).toBeUndefined();
+    expect(faded?.tracer?.shape).toBeNull();
+    expect(faded?.tracer?.manualStart).toBeNull();
+    expect(faded?.tracer?.setupDone).toBe(false);
     const legacy = JSON.parse(JSON.stringify(toBackup(sample(), drive))) as Record<string, unknown>;
     delete legacy.shot;
     delete legacy.tracer;
