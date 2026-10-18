@@ -1,4 +1,4 @@
-import type { Pt, ViewAngle } from '../types';
+import type { Pt, TracerCalibration, ViewAngle } from '../types';
 import type { FlightSample } from './flight';
 
 export interface TracerCamera {
@@ -178,14 +178,7 @@ export function projectFlight(
   });
 }
 
-export function defaultTracer(): {
-  ball: null;
-  target: null;
-  impactTime: null;
-  cameraHeight: number;
-  cameraDistance: number;
-  fov: number;
-} {
+export function defaultTracer(): TracerCalibration {
   return {
     ball: null,
     target: null,
@@ -193,5 +186,6 @@ export function defaultTracer(): {
     cameraHeight: 1.4,
     cameraDistance: 3.5,
     fov: 60,
+    locked: false,
   };
 }

@@ -228,8 +228,9 @@ export function paint(
   w: number,
   h: number,
   selectedId: string | null,
+  clear = true,
 ) {
-  ctx.clearRect(0, 0, w, h);
+  if (clear) ctx.clearRect(0, 0, w, h);
   const selected = drawings.find((d) => d.id === selectedId) ?? null;
   for (const d of drawings) {
     if (d.id === selectedId) continue;

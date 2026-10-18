@@ -106,7 +106,25 @@ export function paintTracer(
     ctx.arc(x, y, 7, 0, Math.PI * 2);
     ctx.stroke();
   };
-  if (marks.ball) ring(marks.ball, '#ffe14a');
-  if (marks.target) ring(marks.target, '#7ee0ff');
+  const label = (point: Pt, text: string, color: string) => {
+    const x = point.x * width;
+    const y = point.y * height - 16;
+    ctx.font = '600 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    const box = ctx.measureText(text).width + 12;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(x - box / 2, y - 16, box, 18);
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+  };
+  if (marks.ball) {
+    ring(marks.ball, '#ffe14a');
+    label(marks.ball, 'Ball', '#ffe14a');
+  }
+  if (marks.target) {
+    ring(marks.target, '#7ee0ff');
+    label(marks.target, 'Aim', '#7ee0ff');
+  }
   ctx.restore();
 }

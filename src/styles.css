@@ -610,6 +610,107 @@ textarea { resize: vertical; }
   overflow: hidden;
   --player-bar-height: calc(180px + var(--safe-bottom));
 }
+.player-screen.is-immersive {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+}
+.player-screen.is-immersive .float-close,
+.player-screen.is-immersive .time-pill,
+.player-screen.is-immersive .float-help,
+.player-screen.is-immersive .player-bar,
+.player-screen.is-immersive .pinch-banner,
+.player-screen.is-immersive .player-banner,
+.player-screen.is-immersive .tool-backdrop {
+  display: none;
+}
+.immersive-exit {
+  position: absolute;
+  z-index: 8;
+  top: calc(10px + var(--safe-top));
+  right: calc(12px + var(--safe-right));
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(20, 20, 20, 0.72);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 650;
+}
+.export-banner {
+  position: absolute;
+  z-index: 12;
+  left: 12px;
+  right: 12px;
+  top: calc(56px + var(--safe-top));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(12, 16, 14, 0.92);
+  color: #fff;
+}
+.export-banner p { margin: 0; font-size: 14px; }
+.export-banner button {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #fff;
+  color: #111;
+  font-weight: 650;
+}
+.aim-reticle {
+  position: absolute;
+  z-index: 4;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.aim-reticle-ring {
+  position: absolute;
+  left: -18px;
+  top: -18px;
+  width: 36px;
+  height: 36px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #111, 0 0 0 6px rgba(126, 224, 255, 0.35);
+}
+.aim-reticle-ring::before,
+.aim-reticle-ring::after {
+  content: "";
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 0 0 1px #111;
+}
+.aim-reticle-ring::before { left: 15px; top: -6px; width: 2px; height: 44px; }
+.aim-reticle-ring::after { top: 15px; left: -6px; height: 2px; width: 44px; }
+.aim-reticle-label {
+  position: absolute;
+  left: 22px;
+  top: -28px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #7ee0ff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.aim-reticle[data-kind="ball"] .aim-reticle-label { color: #ffe14a; }
+.aim-reticle[data-kind="ball"] .aim-reticle-ring { box-shadow: 0 0 0 1px #111, 0 0 0 6px rgba(255, 225, 74, 0.35); }
+.tracer-lock {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+.tracer-lock:disabled { opacity: 0.55; }
 .player-stage { background: #000; }
 .float-btn, .time-pill {
   position: absolute;

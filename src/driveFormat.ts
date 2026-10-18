@@ -182,6 +182,7 @@ function sanitizeTracer(value: unknown): TracerCalibration | null {
     cameraHeight,
     cameraDistance,
     fov,
+    locked: rec.locked === true,
   };
 }
 

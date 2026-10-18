@@ -125,6 +125,7 @@ describe('backup json', () => {
       cameraHeight: 1.5,
       cameraDistance: 3,
       fov: 58,
+      locked: true,
     };
     const parsed = parseBackup(JSON.stringify(toBackup(meta, drive)));
     expect(parsed?.shot?.ballSpeed).toBe(167);
@@ -134,6 +135,7 @@ describe('backup json', () => {
     expect(parsed?.shot?.sources.carry).toBe('typed');
     expect(parsed?.tracer?.impactTime).toBe(1.25);
     expect(parsed?.tracer?.ball).toEqual({ x: 0.5, y: 0.7 });
+    expect(parsed?.tracer?.locked).toBe(true);
     const legacy = JSON.parse(JSON.stringify(toBackup(sample(), drive))) as Record<string, unknown>;
     delete legacy.shot;
     delete legacy.tracer;

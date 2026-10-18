@@ -63,6 +63,8 @@ export interface TracerCalibration {
   cameraDistance: number;
   /** Vertical field of view, degrees. */
   fov: number;
+  /** When set, ball, aim, impact, numbers, and camera sliders do not change. */
+  locked?: boolean;
 }
 
 export type ViewAngle = 'dtl' | 'face';

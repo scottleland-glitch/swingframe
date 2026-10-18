@@ -43,6 +43,10 @@ export function TracerPanel({
   onCalibrate,
   onClear,
   canClear,
+  showAim,
+  onToggleAim,
+  exporting,
+  onExport,
   onBack,
 }: {
   view: ViewAngle;
@@ -57,6 +61,10 @@ export function TracerPanel({
   onCalibrate: (which: 'ball' | 'target') => void;
   onClear: () => void;
   canClear: boolean;
+  showAim: boolean;
+  onToggleAim: () => void;
+  exporting: boolean;
+  onExport: () => void;
   onBack: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -65,6 +73,7 @@ export function TracerPanel({
   const [draft, setDraft] = useState<{ field: ShotField; text: string } | null>(null);
   const [pendingSide, setPendingSide] = useState<Partial<Record<ShotField, -1 | 1>>>({});
   const flight = useMemo(() => simulateShot(shot), [shot]);
+  const locked = tracer.locked === true;
 
   function sideFor(field: ShotField): -1 | 1 | 0 {
     const value = shot[field];
@@ -127,12 +136,13 @@ export function TracerPanel({
         type="button"
         className="btn primary"
         data-testid="tracer-screenshot"
-        disabled={reading}
+        disabled={reading || locked}
         onClick={() => fileRef.current?.click()}
       >
         {reading ? 'Reading screenshot…' : 'Foresight screenshot'}
       </button>
       {(localNote || note) && <p className="tracer-status">{localNote || note}</p>}
+      <fieldset className="tracer-lock" disabled={locked}>
       <div className="tracer-grid">
         {FIELDS.map((field) => {
           const source = shot.sources[field.key];
@@ -226,6 +236,26 @@ export function TracerPanel({
         L and R are degrees left or right of the aim line. Launch direction is the start line. Spin axis curves the ball off that line, and the aim point is not the landing. If launch direction is blank, it is about 80% of face to target. If spin axis is blank, it follows face to path.
       </p>
       <div className="panel-actions">
+        <button type="button" className="btn" data-testid="tracer-show-aim" aria-pressed={showAim} onClick={onToggleAim}>
+          {showAim ? 'Hide aim point' : 'Show aim point'}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          data-testid="tracer-lock"
+          aria-pressed={locked}
+          onClick={() => onTracer({ ...tracer, locked: !locked })}
+        >
+          {locked ? 'Unlock' : 'Lock'}
+        </button>
+      </div>
+      <p className="panel-hint">
+        {locked
+          ? 'Locked. The ball, aim, impact, numbers, and camera sliders stay put until you unlock.'
+          : 'Lock freezes the tracer so nothing moves by accident.'}{' '}
+        Show aim point draws the ball, the aim point, and the white aim line. They stay hidden during playback unless this is on.
+      </p>
+      <div className="panel-actions">
         <button type="button" className="btn" data-testid="tracer-ball" onClick={() => onCalibrate('ball')}>
           {tracer.ball ? 'Move ball' : 'Tap the ball'}
         </button>
@@ -284,7 +314,14 @@ export function TracerPanel({
           {busy ? 'Finding impact…' : 'Detect from sound'}
         </button>
       </div>
-      <button type="button" className="btn danger" data-testid="tracer-clear" disabled={!canClear} onClick={onClear}>
+      </fieldset>
+      <button type="button" className="btn" data-testid="tracer-export" disabled={exporting} onClick={onExport}>
+        {exporting ? 'Exporting…' : 'Export video'}
+      </button>
+      <p className="panel-hint">
+        Export plays the clip at real speed and burns in the tracer, plus drawings if they are on screen. If the clip ends before the ball lands, the last frame holds until it does. The file stays on this phone.
+      </p>
+      <button type="button" className="btn danger" data-testid="tracer-clear" disabled={!canClear || locked} onClick={onClear}>
         Clear tracer
       </button>
       <button type="button" className="text-btn" onClick={onBack}>

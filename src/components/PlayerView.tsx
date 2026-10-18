@@ -9,6 +9,7 @@ import { withColor } from '../geometry';
 import { detectImpactTime } from '../tracer/detect';
 import { chooseUndo, tracerIsSet } from '../tracer/active';
 import { emptyShot, simulateShot } from '../tracer/flight';
+import { offerRecording, recordTracerVideo } from '../tracer/exportVideo';
 import { defaultTracer, projectFlight } from '../tracer/project';
 import { tracerPlayhead } from '../tracer/timing';
 import type { Drawing, ShotData, SwingMeta, Tool, TracerCalibration } from '../types';
@@ -108,6 +109,11 @@ export function PlayerView({
   const [tracerCal, setTracerCal] = useState<TracerCalibration | null>(null);
   const [impactBusy, setImpactBusy] = useState(false);
   const [tracerNote, setTracerNote] = useState<string | null>(null);
+  const [showAim, setShowAim] = useState(false);
+  const [immersive, setImmersive] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  const exportAbort = useRef<AbortController | null>(null);
   const hydratedFor = useRef<string | null>(null);
   const tracerModeRef = useRef<'ball' | 'target' | null>(null);
   const tracerPending = useRef<{ shot: ShotData; tracer: TracerCalibration } | null>(null);
@@ -188,6 +194,9 @@ export function PlayerView({
     setTracerUndoReady(false);
     setTracerEngaged(false);
     setConfirmTracer(false);
+    setShowAim(false);
+    setImmersive(false);
+    exportAbort.current?.abort();
   }, [id, setMode]);
 
   useEffect(() => () => barObserver.current?.disconnect(), []);
@@ -591,8 +600,45 @@ export function PlayerView({
   const trimIn = swing.trimIn ?? null;
   const trimOut = swing.trimOut ?? null;
 
+  const startExport = () => {
+    if (!blob || exportAbort.current) return;
+    const controller = new AbortController();
+    exportAbort.current = controller;
+    setExporting(true);
+    setExportProgress(0);
+    void recordTracerVideo({
+      blob,
+      drawings,
+      tracerPath,
+      impactTime: activeCal.impactTime,
+      flightTime: tracerFlight,
+      clipStart: trimIn ?? 0,
+      clipEnd: trimOut ?? swing.duration ?? 0,
+      videoWidth: swing.videoWidth || 0,
+      videoHeight: swing.videoHeight || 0,
+      marks: showAim ? { ball: activeCal.ball, target: activeCal.target } : null,
+      signal: controller.signal,
+      onProgress: (fraction) => setExportProgress(fraction),
+    })
+      .then(async (result) => {
+        if (controller.signal.aborted) return;
+        const extension = result.mime.includes('webm') ? 'webm' : 'mp4';
+        const offered = await offerRecording(result.blob, `swingframe-tracer.${extension}`);
+        if (controller.signal.aborted) return;
+        setTracerNote(offered === 'downloaded' ? `${result.note} A download started.` : result.note);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setTracerNote(error instanceof Error ? error.message : 'Export failed.');
+      })
+      .finally(() => {
+        if (exportAbort.current === controller) exportAbort.current = null;
+        setExporting(false);
+      });
+  };
+
   return (
-    <div className="screen player-screen">
+    <div className={cx('screen player-screen', immersive && 'is-immersive')}>
       <div className="stage-wrap player-stage">
         <VideoStage
           ref={stageRef}
@@ -613,30 +659,51 @@ export function PlayerView({
           onSelect={setSelectedId}
           onCommit={commitDrawings}
           onDraftChange={setHasDraft}
-          calibrate={tracerMode}
-          onCalibrate={(pt) => {
+          calibrate={activeCal.locked ? null : tracerMode}
+          immersive={immersive}
+          onExitImmersive={() => setImmersive(false)}
+          onCalibrate={(pt, phase) => {
+            if (calRef.current.locked) return tracerModeRef.current;
             const mode = tracerModeRef.current;
             if (mode === 'ball') {
-              rememberTracer(shotRef.current, { ...calRef.current, ball: pt }, true);
-              setMode('target');
-              return 'target';
+              rememberTracer(shotRef.current, { ...calRef.current, ball: pt }, phase === 'up');
+              if (phase === 'up') {
+                setMode('target');
+                return 'target';
+              }
+              return 'ball';
             }
             if (mode === 'target') {
-              rememberTracer(shotRef.current, { ...calRef.current, target: pt }, true);
-              setMode(null);
-              return null;
+              rememberTracer(shotRef.current, { ...calRef.current, target: pt }, phase === 'up');
+              if (phase === 'up') {
+                setMode(null);
+                return null;
+              }
+              return 'target';
             }
             return null;
           }}
           tracerPath={tuningTracer || activeCal.impactTime != null ? tracerPath : null}
           tracerElapsed={tracerElapsed}
           tracerMarks={
-            tracerMode != null || (toolsOpen && panelPage === 'tracer')
-              ? { ball: activeCal.ball, target: activeCal.target }
-              : null
+            showAim || tracerMode != null ? { ball: activeCal.ball, target: activeCal.target } : null
           }
         />
       </div>
+
+      {immersive && (
+        <button type="button" className="immersive-exit" data-testid="exit-full-screen" aria-label="Exit full screen" onClick={() => setImmersive(false)}>
+          Exit
+        </button>
+      )}
+      {exporting && (
+        <div className="export-banner" data-testid="export-progress" role="status">
+          <p>Exporting… {Math.round(exportProgress * 100)}%</p>
+          <button type="button" onClick={() => exportAbort.current?.abort()}>
+            Cancel
+          </button>
+        </div>
+      )}
 
       <button type="button" className="float-btn float-close" aria-label="Close" data-testid="close-player" onClick={onBack}>
         <Icon name="close" />
@@ -668,6 +735,19 @@ export function PlayerView({
         <div className="bar-meta">
           <button type="button" className="speed-pill" data-testid="speed-pill" aria-label="Playback speed" onClick={cycleRate}>
             {formatRate(rate)}
+          </button>
+          <button
+            type="button"
+            className="speed-pill"
+            data-testid="full-screen"
+            aria-label="Full screen"
+            onClick={() => {
+              setToolsOpen(false);
+              setHelpOpen(false);
+              setImmersive(true);
+            }}
+          >
+            Full
           </button>
           <button
             type="button"
@@ -895,7 +975,10 @@ export function PlayerView({
                 busy={impactBusy}
                 note={tracerNote}
                 onShot={(next) => rememberTracer(next, calRef.current, true)}
-                onTracer={(next) => rememberTracer(shotRef.current, next)}
+                onTracer={(next) => {
+                  if (next.locked) setMode(null);
+                  rememberTracer(shotRef.current, next, Boolean(next.locked) !== Boolean(calRef.current.locked));
+                }}
                 onDetect={() => {
                   setImpactBusy(true);
                   setTracerNote(null);
@@ -916,7 +999,12 @@ export function PlayerView({
                 onMarkImpact={markImpact}
                 onClear={() => setConfirmTracer(true)}
                 canClear={tracerIsSet(activeShot, activeCal)}
+                showAim={showAim}
+                onToggleAim={() => setShowAim((value) => !value)}
+                exporting={exporting}
+                onExport={startExport}
                 onCalibrate={(which) => {
+                  if (calRef.current.locked) return;
                   setMode(which);
                   setToolsOpen(false);
                 }}

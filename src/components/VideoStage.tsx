@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { ZOOM_MAX, ZOOM_MIN } from '../constants';
 import { paint } from '../draw';
+import { pointAboveFinger } from '../tracer/aimPoint';
 import { paintTracer } from '../tracer/paintTracer';
 import type { TracerPoint } from '../tracer/project';
 import { uid } from '../format';
@@ -86,7 +87,9 @@ export const VideoStage = forwardRef<
     onDraftChange?: (hasDraft: boolean) => void;
     onZoom?: (scale: number) => void;
     calibrate?: 'ball' | 'target' | null;
-    onCalibrate?: (pt: Pt) => 'ball' | 'target' | null | void;
+    onCalibrate?: (pt: Pt, phase: 'move' | 'up') => 'ball' | 'target' | null | void;
+    immersive?: boolean;
+    onExitImmersive?: () => void;
     tracerPath?: TracerPoint[] | null;
     tracerElapsed?: number | null;
     tracerMarks?: { ball: Pt | null; target: Pt | null } | null;
@@ -113,6 +116,8 @@ export const VideoStage = forwardRef<
     onZoom,
     calibrate = null,
     onCalibrate,
+    immersive = false,
+    onExitImmersive,
     tracerPath = null,
     tracerElapsed = null,
     tracerMarks = null,
@@ -130,6 +135,7 @@ export const VideoStage = forwardRef<
   const [cursor, setCursor] = useState<Pt | null>(null);
   const [live, setLive] = useState<Drawing[] | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const [reticle, setReticle] = useState<{ x: number; y: number; kind: 'ball' | 'target' } | null>(null);
 
   const layoutRef = useRef(layout);
   const zoomRef = useRef(zoom);
@@ -158,6 +164,10 @@ export const VideoStage = forwardRef<
   const onZoomRef = useRef(onZoom);
   const calibrateRef = useRef(calibrate);
   const onCalibrateRef = useRef(onCalibrate);
+  const placingRef = useRef(false);
+  const immersiveRef = useRef(immersive);
+  const onExitImmersiveRef = useRef(onExitImmersive);
+  const pressRef = useRef<{ x: number; y: number } | null>(null);
   const manualRef = useRef(false);
   const manualTimer = useRef<number | null>(null);
   const wakeRef = useRef<WakeLockSentinel | null>(null);
@@ -184,6 +194,8 @@ export const VideoStage = forwardRef<
   onZoomRef.current = onZoom;
   calibrateRef.current = calibrate;
   onCalibrateRef.current = onCalibrate;
+  immersiveRef.current = immersive;
+  onExitImmersiveRef.current = onExitImmersive;
   layoutRef.current = layout;
 
   function flagDraft(nextDraft: Drawing | null, pts: Pt[]) {
@@ -419,6 +431,19 @@ export const VideoStage = forwardRef<
       x: mirroredRef.current ? 1 - visualX : visualX,
       y: (clientY - rect.top) / rect.height,
     };
+  }
+
+  function placeReticle(clientX: number, clientY: number, phase: 'move' | 'up') {
+    const rect = canvasRect();
+    const kind = calibrateRef.current;
+    if (!rect || !kind) return;
+    const placed = pointAboveFinger(clientX, clientY, rect, mirroredRef.current);
+    const stage = stageRef.current?.getBoundingClientRect();
+    if (stage && phase === 'move') {
+      setReticle({ x: placed.clientX - stage.left, y: placed.clientY - stage.top, kind });
+    }
+    const next = onCalibrateRef.current?.(placed.point, phase);
+    if (phase === 'up' && next !== undefined) calibrateRef.current = next ?? null;
   }
 
   function onVideo(clientX: number, clientY: number, p: Pt) {
@@ -927,6 +952,10 @@ export const VideoStage = forwardRef<
   }, [overlayBlob]);
 
   useEffect(() => {
+    if (!calibrate) setReticle(null);
+  }, [calibrate]);
+
+  useEffect(() => {
     if (videoRef.current) videoRef.current.muted = muted;
   }, [muted]);
 
@@ -1062,11 +1091,13 @@ export const VideoStage = forwardRef<
         if (calibrateRef.current) {
           const p = normFromClient(event.clientX, event.clientY);
           if (p && onVideo(event.clientX, event.clientY, p)) {
-            const next = onCalibrateRef.current?.(clampPt(p));
-            if (next !== undefined) calibrateRef.current = next ?? null;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            placingRef.current = true;
+            placeReticle(event.clientX, event.clientY, 'move');
           }
           return;
         }
+        pressRef.current = { x: event.clientX, y: event.clientY };
         event.currentTarget.setPointerCapture(event.pointerId);
         pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
         if (pointers.current.size >= 2) {
@@ -1077,6 +1108,10 @@ export const VideoStage = forwardRef<
         beginGesture(event);
       }}
       onPointerMove={(event) => {
+        if (placingRef.current && calibrateRef.current) {
+          placeReticle(event.clientX, event.clientY, 'move');
+          return;
+        }
         if (!pointers.current.has(event.pointerId)) return;
         pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
         if (pointers.current.size >= 2) {
@@ -1088,6 +1123,24 @@ export const VideoStage = forwardRef<
         moveGesture(event);
       }}
       onPointerUp={(event) => {
+        if (placingRef.current) {
+          placeReticle(event.clientX, event.clientY, 'up');
+          placingRef.current = false;
+          setReticle(null);
+          return;
+        }
+        const press = pressRef.current;
+        pressRef.current = null;
+        if (immersiveRef.current && press && !calibrateRef.current && pointers.current.size <= 1 && !twoRef.current && !pinchRef.current) {
+          const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
+          if (moved < 14) {
+            pointers.current.delete(event.pointerId);
+            dragRef.current = null;
+            setCursor(null);
+            onExitImmersiveRef.current?.();
+            return;
+          }
+        }
         pointers.current.delete(event.pointerId);
         if (pinchRef.current) {
           if (pointers.current.size < 2) {
@@ -1115,6 +1168,10 @@ export const VideoStage = forwardRef<
         setCursor(null);
       }}
       onPointerCancel={(event) => {
+        if (placingRef.current) {
+          placingRef.current = false;
+          setReticle(null);
+        }
         pointers.current.delete(event.pointerId);
         pinchRef.current = null;
         twoRef.current = null;
@@ -1156,9 +1213,15 @@ export const VideoStage = forwardRef<
         )}
         <canvas ref={canvasRef} />
       </div>
+      {reticle && (
+        <div className="aim-reticle" data-testid="aim-reticle" data-kind={reticle.kind} style={{ left: reticle.x, top: reticle.y }}>
+          <span className="aim-reticle-ring" />
+          <span className="aim-reticle-label">{reticle.kind === 'ball' ? 'Ball' : 'Aim'}</span>
+        </div>
+      )}
       {calibrate ? (
         <div className="gesture-chip" data-testid="tracer-hint">
-          {calibrate === 'ball' ? 'Tap the ball' : 'Tap a point up the aim line'}
+          {calibrate === 'ball' ? 'Drag the ball. The crosshair sits above your finger.' : 'Drag the aim point. The crosshair sits above your finger.'}
         </div>
       ) : (
         gestureHint && !panMode && <div className="gesture-chip">{gestureHint}</div>
