@@ -2,7 +2,7 @@ import { paint } from '../draw';
 import type { Drawing, Pt } from '../types';
 import { paintTracer } from './paintTracer';
 import type { TracerPoint } from './project';
-import { tracerPlayhead } from './timing';
+import { playClock, tracerPlayhead } from './timing';
 
 /** How long the export runs. It starts at the clip and holds the last frame until the ball lands. */
 export function exportSpan(clipStart: number, clipEnd: number, impact: number | null, flightTime: number): { start: number; end: number } {
@@ -128,6 +128,8 @@ export async function recordTracerVideo(request: ExportRequest): Promise<ExportR
   video.controls = false;
   video.preload = 'auto';
   video.muted = false;
+  video.loop = false;
+  video.onended = () => video.pause();
   video.style.cssText = 'position:fixed;left:0;top:0;width:8px;height:8px;opacity:0.01;pointer-events:none;z-index:-1';
   document.body.appendChild(video);
   video.src = url;
@@ -186,11 +188,11 @@ export async function recordTracerVideo(request: ExportRequest): Promise<ExportR
       const chunks: Blob[] = [];
       let raf = 0;
       let settled = false;
-      const stopLoop = () => cancelAnimationFrame(raf);
+      const stopFrames = () => cancelAnimationFrame(raf);
       const fail = (error: Error) => {
         if (settled) return;
         settled = true;
-        stopLoop();
+        stopFrames();
         reject(error);
       };
       recorder.ondataavailable = (event) => {
@@ -200,7 +202,7 @@ export async function recordTracerVideo(request: ExportRequest): Promise<ExportR
       recorder.onstop = () => {
         if (settled) return;
         settled = true;
-        stopLoop();
+        stopFrames();
         resolve(new Blob(chunks, { type: recorder.mimeType || mime || 'video/mp4' }));
       };
       const stop = () => {
@@ -208,10 +210,21 @@ export async function recordTracerVideo(request: ExportRequest): Promise<ExportR
       };
       request.signal?.addEventListener('abort', stop, { once: true });
       const started = performance.now();
+      let parkedPicture = false;
       const tick = () => {
         if (request.signal?.aborted) return;
         const t = span.start + (performance.now() - started) / 1000;
-        if (video.currentTime >= pictureEnd - 0.04 || video.ended) video.pause();
+        if (video.currentTime >= pictureEnd - 0.04 || video.ended) {
+          video.pause();
+          if (!parkedPicture && video.currentTime > pictureEnd + 0.04) {
+            parkedPicture = true;
+            try {
+              video.currentTime = Math.max(span.start, pictureEnd - 0.001);
+            } catch {
+              /* The last decoded frame is enough. The tracer still finishes on the clock. */
+            }
+          }
+        }
         ctx.drawImage(video, 0, 0, size.w, size.h);
         const viewW = 390;
         const viewH = Math.max(2, (viewW * size.h) / size.w);
@@ -225,7 +238,19 @@ export async function recordTracerVideo(request: ExportRequest): Promise<ExportR
             drawLine ? request.tracerPath : null,
             viewW,
             viewH,
-            drawLine ? tracerPlayhead(t, request.impactTime, request.flightTime) : null,
+            drawLine
+              ? tracerPlayhead(
+                  playClock({
+                    videoTime: Math.min(t, pictureEnd),
+                    clipEnd: pictureEnd,
+                    impact: request.impactTime,
+                    flightTime: request.flightTime,
+                    hold: Math.max(0, t - pictureEnd),
+                  }).playbackTime,
+                  request.impactTime,
+                  request.flightTime,
+                )
+              : null,
             request.marks,
           );
         }

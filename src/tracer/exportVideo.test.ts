@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { pointAboveFinger } from './aimPoint';
 import { chooseRecorderMime, exportSize, exportSpan } from './exportVideo';
+import { holdSpan } from './timing';
 
 describe('aim reticle', () => {
   const rect = { left: 100, top: 200, right: 500, bottom: 900, width: 400, height: 700 };
@@ -31,6 +32,7 @@ describe('tracer export span', () => {
     expect(exportSpan(0, 8, 6, 7)).toEqual({ start: 0, end: 13 });
     expect(exportSpan(0, 10, 2, 3)).toEqual({ start: 0, end: 10 });
     expect(exportSpan(1, 4, null, 0)).toEqual({ start: 1, end: 4 });
+    expect(exportSpan(0, 9.3, 3.5, 6.8).end).toBeCloseTo(9.3 + holdSpan(9.3, 3.5, 6.8));
   });
 
   it('caps a large frame and still reports when recording is unavailable', () => {

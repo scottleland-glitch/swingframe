@@ -12,7 +12,6 @@ export type IconName =
   | 'fit'
   | 'mute'
   | 'unmute'
-  | 'loop'
   | 'select'
   | 'line'
   | 'pen'
@@ -128,8 +127,6 @@ function paths(name: IconName) {
           <path d="M16 9.5a4 4 0 0 1 0 5M18.5 7.5a7 7 0 0 1 0 9" />
         </>
       );
-    case 'loop':
-      return <path d="M7 8H4v4m.6-3.2A7 7 0 0 1 19 11M17 16h3v-4m-.6 3.2A7 7 0 0 1 5 13" />;
     case 'select':
       return <path d="M6 4l5 16 2.2-6.2L20 11 6 4Z" />;
     case 'line':

@@ -6,7 +6,7 @@ import { tesseractPaths } from './ocrPaths';
 import { parseForesightText } from './parseShot';
 import { defaultTracer, projectFlight, type TracerPoint } from './project';
 import { withSide } from './sign';
-import { tracerPlayhead } from './timing';
+import { clipEndTime, holdSpan, nextHold, playClock, tracerPlayhead } from './timing';
 import type { Pt } from '../types';
 
 function driver(spinAxis = 0, hla = 0, spin = 2600, vla = 12) {
@@ -450,6 +450,52 @@ describe('tracer timing', () => {
     expect(tracerPlayhead(2.2, 1.4, 6.8, 1)).toBeCloseTo(1.8);
     expect(tracerPlayhead(2.2, 1.4, 6.8, 20)).toBe(6.8);
     expect(tracerPlayhead(4, null, 6.8)).toBe(0);
+  });
+
+  it('finishes the tracer on the last frame when the clip ends before the ball lands', () => {
+    const end = 9.3;
+    const impact = 3.5;
+    const flight = 6.8;
+    expect(clipEndTime(end, null, null)).toBe(end);
+    expect(clipEndTime(end, 1, 4)).toBe(4);
+    expect(clipEndTime(end, 1, null)).toBe(end);
+    const cap = holdSpan(end, impact, flight);
+    expect(cap).toBeCloseTo(1);
+
+    const atClip = playClock({ videoTime: end, clipEnd: end, impact, flightTime: flight, hold: 0 });
+    expect(atClip.pictureDone).toBe(true);
+    expect(atClip.holding).toBe(true);
+    expect(atClip.landed).toBe(false);
+    expect(atClip.playbackTime).toBeCloseTo(end);
+    expect(tracerPlayhead(atClip.playbackTime, impact, flight)).toBeCloseTo(5.8);
+
+    // A video clock that runs past the file, the way the pill did, is not tracer time.
+    const runaway = playClock({ videoTime: 10.29, clipEnd: end, impact, flightTime: flight, hold: 0 });
+    expect(runaway.playbackTime).toBeCloseTo(end);
+    expect(runaway.holding).toBe(true);
+    expect(tracerPlayhead(runaway.playbackTime, impact, flight)).toBeCloseTo(5.8);
+
+    const stepped = nextHold(0, 0.5, 1, end, impact, flight);
+    expect(stepped).toBeCloseTo(0.5);
+    const mid = playClock({ videoTime: end, clipEnd: end, impact, flightTime: flight, hold: stepped });
+    expect(mid.playbackTime).toBeCloseTo(9.8);
+    expect(tracerPlayhead(mid.playbackTime, impact, flight)).toBeCloseTo(6.3);
+
+    const full = nextHold(stepped, 1, 1, end, impact, flight);
+    expect(full).toBeCloseTo(cap);
+    const landed = playClock({ videoTime: end, clipEnd: end, impact, flightTime: flight, hold: full });
+    expect(landed.playbackTime).toBeCloseTo(10.3);
+    expect(landed.holding).toBe(false);
+    expect(landed.landed).toBe(true);
+    expect(tracerPlayhead(landed.playbackTime, impact, flight)).toBeCloseTo(flight);
+
+    expect(nextHold(0, 0.5, 0.25, end, impact, flight)).toBeCloseTo(0.125);
+
+    const early = playClock({ videoTime: 8, clipEnd: end, impact, flightTime: flight, hold: 2 });
+    expect(early.pictureDone).toBe(false);
+    expect(early.hold).toBe(0);
+    expect(early.playbackTime).toBeCloseTo(8);
+    expect(tracerPlayhead(early.playbackTime, impact, flight)).toBeCloseTo(4.5);
   });
 
   it('applies left as negative and right as positive', () => {

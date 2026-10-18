@@ -75,7 +75,6 @@ export const VideoStage = forwardRef<
     selectedId: string | null;
     fps: number;
     rate: number;
-    loop: boolean;
     muted: boolean;
     mirrored?: boolean;
     panMode?: boolean;
@@ -103,7 +102,6 @@ export const VideoStage = forwardRef<
     selectedId,
     fps,
     rate,
-    loop,
     muted,
     mirrored = false,
     panMode = false,
@@ -153,7 +151,6 @@ export const VideoStage = forwardRef<
   const selectedRef = useRef(selectedId);
   const fpsRef = useRef(fps);
   const rateRef = useRef(rate);
-  const loopRef = useRef(loop);
   const mirroredRef = useRef(mirrored);
   const panModeRef = useRef(panMode);
   const trimInRef = useRef<number | null>(trimIn);
@@ -175,7 +172,11 @@ export const VideoStage = forwardRef<
 
   const attachVideo = useCallback((node: HTMLVideoElement | null) => {
     videoRef.current = node;
-    if (node) markInline(node);
+    if (node) {
+      markInline(node);
+      node.loop = false;
+      node.onended = () => node.pause();
+    }
   }, []);
 
   drawingsRef.current = drawings;
@@ -183,7 +184,6 @@ export const VideoStage = forwardRef<
   colorRef.current = color;
   selectedRef.current = selectedId;
   fpsRef.current = fps;
-  loopRef.current = loop;
   mirroredRef.current = mirrored;
   panModeRef.current = panMode;
   trimInRef.current = trimIn;
@@ -277,20 +277,12 @@ export const VideoStage = forwardRef<
       const end = trimOutRef.current;
       const start = trimInRef.current ?? 0;
       if (end != null && node.currentTime >= end - stepSize * 0.25) {
-        if (loopRef.current) {
-          node.currentTime = start;
-          return;
-        }
         node.currentTime = Math.max(start, end - 0.001);
         stopManual();
         void unlockWake();
         return;
       }
       if (node.currentTime >= dur - stepSize * 0.25) {
-        if (loopRef.current) {
-          node.currentTime = 0;
-          return;
-        }
         stopManual();
         void unlockWake();
         return;
@@ -342,10 +334,6 @@ export const VideoStage = forwardRef<
     const start = trimInRef.current ?? 0;
     const end = trimOutRef.current;
     if (end != null && end > start && video.currentTime >= end - 0.02) {
-      if (loopRef.current) {
-        video.currentTime = start;
-        return;
-      }
       video.currentTime = Math.max(start, end - 0.001);
       pause();
       return;
@@ -956,12 +944,11 @@ export const VideoStage = forwardRef<
   }, [calibrate]);
 
   useEffect(() => {
-    if (videoRef.current) videoRef.current.muted = muted;
+    if (videoRef.current) {
+      videoRef.current.muted = muted;
+      videoRef.current.loop = false;
+    }
   }, [muted]);
-
-  useEffect(() => {
-    if (videoRef.current) videoRef.current.loop = loop;
-  }, [loop]);
 
   useEffect(() => {
     applyRate(rate);
@@ -1195,7 +1182,7 @@ export const VideoStage = forwardRef<
           ref={attachVideo}
           playsInline
           muted={muted}
-          loop={loop}
+          loop={false}
           preload="auto"
           controls={false}
           aria-label="Swing video"

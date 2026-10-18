@@ -11,7 +11,7 @@ import { chooseUndo, tracerIsSet } from '../tracer/active';
 import { emptyShot, simulateShot } from '../tracer/flight';
 import { offerRecording, recordTracerVideo } from '../tracer/exportVideo';
 import { defaultTracer, projectFlight } from '../tracer/project';
-import { tracerPlayhead } from '../tracer/timing';
+import { clipEndTime, holdSpan, nextHold, playClock, tracerPlayhead } from '../tracer/timing';
 import type { Drawing, ShotData, SwingMeta, Tool, TracerCalibration } from '../types';
 import { useSwing } from '../useSwing';
 import { APP_VERSION } from '../version';
@@ -89,8 +89,8 @@ export function PlayerView({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hasDraft, setHasDraft] = useState(false);
   const [rate, setRate] = useState(1);
-  const [loop, setLoop] = useState(false);
   const [muted, setMuted] = useState(true);
+  const [holding, setHolding] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -119,7 +119,12 @@ export function PlayerView({
   const holdRef = useRef(0);
   const flightRef = useRef(0);
   const rateRef = useRef(rate);
-  const loopRef = useRef(loop);
+  const holdingRef = useRef(false);
+  const parkedAt = useRef(0);
+  const restartUntil = useRef(0);
+  const atEndRef = useRef(false);
+  const trimInRef = useRef<number | null>(null);
+  const trimOutRef = useRef<number | null>(null);
   const [tracerHold, setTracerHold] = useState(0);
   const [tracerEngaged, setTracerEngaged] = useState(false);
   const [confirmTracer, setConfirmTracer] = useState(false);
@@ -143,7 +148,8 @@ export function PlayerView({
     barObserver.current = observer;
   }, []);
   rateRef.current = rate;
-  loopRef.current = loop;
+  trimInRef.current = swing?.trimIn ?? null;
+  trimOutRef.current = swing?.trimOut ?? null;
   const [others, setOthers] = useState<SwingMeta[]>([]);
   const [overlayId, setOverlayId] = useState<string | null>(null);
   const [overlayBlob, setOverlayBlob] = useState<Blob | null>(null);
@@ -193,6 +199,14 @@ export function PlayerView({
     setConfirmTracer(false);
     setImmersive(false);
     exportAbort.current?.abort();
+    tracerRun.current = false;
+    holdRef.current = 0;
+    parkedAt.current = 0;
+    restartUntil.current = 0;
+    atEndRef.current = false;
+    holdingRef.current = false;
+    setTracerHold(0);
+    setHolding(false);
   }, [id, setMode]);
 
   useEffect(() => () => barObserver.current?.disconnect(), []);
@@ -237,15 +251,34 @@ export function PlayerView({
   const tracerFlight = tracerPath?.length ? tracerPath[tracerPath.length - 1].t : 0;
   flightRef.current = tracerFlight;
   const tuningTracer = tracerMode != null || (toolsOpen && panelPage === 'tracer');
-  const tracerElapsed = tuningTracer ? null : tracerPlayhead(clock.time, activeCal.impactTime, tracerFlight, tracerHold);
+  const clipEnd = clipEndTime(clock.duration, swing?.trimIn, swing?.trimOut);
+  const playback = playClock({
+    videoTime: clock.time,
+    clipEnd,
+    impact: activeCal.impactTime,
+    flightTime: tracerFlight,
+    hold: tracerHold,
+  });
+  const tracerElapsed = tuningTracer ? null : tracerPlayhead(playback.playbackTime, activeCal.impactTime, tracerFlight);
+  const showPaused = clock.paused && !holding;
+
+  const setHoldingFlag = useCallback((next: boolean) => {
+    if (holdingRef.current === next) return;
+    holdingRef.current = next;
+    setHolding(next);
+  }, []);
 
   const clearTracerHold = useCallback(() => {
     tracerRun.current = false;
+    parkedAt.current = 0;
+    restartUntil.current = 0;
+    atEndRef.current = false;
+    setHoldingFlag(false);
     if (holdRef.current !== 0) {
       holdRef.current = 0;
       setTracerHold(0);
     }
-  }, []);
+  }, [setHoldingFlag]);
 
   useEffect(() => {
     let frame = 0;
@@ -253,37 +286,86 @@ export function PlayerView({
     const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
       const engine = stageRef.current;
-      if (loopRef.current && holdRef.current !== 0) {
-        holdRef.current = 0;
-        setTracerHold(0);
-      }
-      if (!engine || !tracerRun.current || loopRef.current) {
+      if (!engine || !tracerRun.current) {
         last = now;
         return;
       }
       const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
       last = now;
-      if (!engine.getEnded()) {
+      const end = clipEndTime(engine.getDuration(), trimInRef.current, trimOutRef.current);
+      // Play was just pressed at the end. Ignore the stale end position until the seek leaves it.
+      if (restartUntil.current) {
+        const time = engine.getTime();
+        if (now < restartUntil.current && end > 0 && time >= end - 0.2) return;
+        restartUntil.current = 0;
+      }
+      const impact = calRef.current.impactTime;
+      const flight = flightRef.current;
+      const clockNow = playClock({
+        videoTime: engine.getTime(),
+        clipEnd: end,
+        impact,
+        flightTime: flight,
+        hold: holdRef.current,
+      });
+      if (!clockNow.pictureDone) {
+        if (atEndRef.current && restartUntil.current === 0 && end > 0) {
+          // A small jitter beside the last frame stays in the hold. A jump to the start is put back.
+          if (engine.getTime() < end - 0.2) {
+            engine.pause();
+            if (now - parkedAt.current > 300) {
+              parkedAt.current = now;
+              engine.seek(Math.max(0, end - 0.001));
+            }
+          }
+          return;
+        }
+        atEndRef.current = false;
+        parkedAt.current = 0;
         if (holdRef.current !== 0) {
           holdRef.current = 0;
           setTracerHold(0);
         }
+        setHoldingFlag(false);
         return;
       }
-      const impact = calRef.current.impactTime;
-      const flight = flightRef.current;
-      if (impact == null || !(flight > 0)) return;
-      const remaining = flight - (engine.getTime() - impact);
-      if (remaining <= 0) return;
-      const next = remaining <= 0.02 ? remaining : Math.min(remaining, holdRef.current + dt * rateRef.current);
+      // Freeze the last frame. The element must not keep playing or wrap back to the start.
+      atEndRef.current = true;
+      if (!engine.getPaused()) engine.pause();
+      if (engine.getTime() > end + 0.04 && now - parkedAt.current > 300) {
+        parkedAt.current = now;
+        engine.seek(Math.max(0, end - 0.001));
+      }
+      const cap = holdSpan(end, impact, flight);
+      if (!(cap > 0.02)) {
+        const settled = cap > 0 ? cap : 0;
+        if (Math.abs(holdRef.current - settled) > 0.0001) {
+          holdRef.current = settled;
+          setTracerHold(settled);
+        }
+        tracerRun.current = false;
+        setHoldingFlag(false);
+        return;
+      }
+      const next = nextHold(holdRef.current, dt, rateRef.current, end, impact, flight);
+      if (cap - next <= 0.02) {
+        if (Math.abs(holdRef.current - cap) > 0.0001) {
+          holdRef.current = cap;
+          setTracerHold(cap);
+        }
+        tracerRun.current = false;
+        setHoldingFlag(false);
+        return;
+      }
       if (next > holdRef.current + 0.0001) {
         holdRef.current = next;
         setTracerHold(next);
       }
+      setHoldingFlag(true);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [setHoldingFlag]);
 
   useEffect(() => {
     let cancel = false;
@@ -321,20 +403,56 @@ export function PlayerView({
   const toggle = useCallback(async () => {
     const engine = stageRef.current;
     if (!engine) return;
-    if (engine.getPaused()) {
+    const end = clipEndTime(engine.getDuration(), trimInRef.current, trimOutRef.current);
+    const clockNow = playClock({
+      videoTime: engine.getTime(),
+      clipEnd: end,
+      impact: calRef.current.impactTime,
+      flightTime: flightRef.current,
+      hold: holdRef.current,
+    });
+    const playing = tracerRun.current || !engine.getPaused();
+    if (playing) {
+      tracerRun.current = false;
+      setHoldingFlag(false);
+      engine.pause();
+      return;
+    }
+    // Paused on the last frame with flight still to draw: keep that frame and finish the tracer.
+    if (clockNow.pictureDone && clockNow.holding) {
+      tracerRun.current = true;
+      setHoldingFlag(true);
+      return;
+    }
+    // The clip, including a finished hold, is over. Start again. The line stays hidden until impact.
+    if (clockNow.pictureDone) {
+      restartUntil.current = performance.now() + 500;
+      atEndRef.current = false;
+      engine.seek(trimInRef.current ?? 0);
+      holdRef.current = 0;
+      parkedAt.current = 0;
+      setTracerHold(0);
+      setHoldingFlag(false);
       tracerRun.current = true;
       try {
         await engine.play();
         setPlayError(null);
       } catch (err) {
         tracerRun.current = false;
+        restartUntil.current = 0;
         setPlayError(err instanceof Error ? err.message : 'Could not play.');
       }
-    } else {
-      tracerRun.current = false;
-      engine.pause();
+      return;
     }
-  }, []);
+    tracerRun.current = true;
+    try {
+      await engine.play();
+      setPlayError(null);
+    } catch (err) {
+      tracerRun.current = false;
+      setPlayError(err instanceof Error ? err.message : 'Could not play.');
+    }
+  }, [setHoldingFlag]);
 
   const step = useCallback((dir: number) => {
     clearTracerHold();
@@ -671,7 +789,6 @@ export function PlayerView({
           selectedId={selectedId}
           fps={fps}
           rate={rate}
-          loop={loop}
           muted={muted}
           mirrored={mirrored}
           panMode={pinch}
@@ -735,7 +852,7 @@ export function PlayerView({
         <Icon name="close" />
       </button>
       <button type="button" className="time-pill" data-testid="time-pill" aria-label="Drag sideways to scrub" onPointerDown={onTimePointerDown}>
-        {formatScrub(clock.time)}
+        {formatScrub(playback.playbackTime)}
       </button>
       <button
         type="button"
@@ -831,11 +948,11 @@ export function PlayerView({
           <button
             type="button"
             className="bar-icon bar-play"
-            aria-label={clock.paused ? 'Play' : 'Pause'}
+            aria-label={showPaused ? 'Play' : 'Pause'}
             data-testid="play"
             onClick={() => void toggle()}
           >
-            <Icon name={clock.paused ? 'play' : 'pause'} />
+            <Icon name={showPaused ? 'play' : 'pause'} />
           </button>
           <button type="button" className="bar-icon" aria-label="Next frame" data-testid="play-forward" onClick={() => step(1)}>
             <Icon name="stepForward" />
@@ -1164,9 +1281,6 @@ export function PlayerView({
             <div className="panel-actions">
               <button type="button" className={cx('btn', !muted && 'primary')} onClick={() => setMuted((value) => !value)}>
                 {muted ? 'Sound off' : 'Sound on'}
-              </button>
-              <button type="button" className={cx('btn', loop && 'primary')} onClick={() => setLoop((value) => !value)}>
-                {loop ? 'Loop on' : 'Loop off'}
               </button>
             </div>
             {driveNote && <p className="banner">{driveNote}</p>}
