@@ -161,6 +161,15 @@ export function PlayerView({
     setSelectedId(null);
   }, [undo]);
 
+  const canClear = drawings.length > 0 || hasDraft;
+
+  const clearAll = useCallback(() => {
+    stageRef.current?.undoDraft();
+    if (drawings.length > 0) commit([]);
+    setSelectedId(null);
+    setConfirmClear(false);
+  }, [commit, drawings.length]);
+
   const removeSelected = useCallback(() => {
     if (!selectedId) return;
     commit(drawings.filter((drawing) => drawing.id !== selectedId));
@@ -343,6 +352,16 @@ export function PlayerView({
           </button>
           <button
             type="button"
+            className="bar-icon bar-clear"
+            aria-label="Clear all"
+            data-testid="bar-clear"
+            disabled={!canClear}
+            onClick={() => setConfirmClear(true)}
+          >
+            <Icon name="clear" />
+          </button>
+          <button
+            type="button"
             className="bar-icon bar-undo"
             aria-label="Undo"
             data-testid="bar-undo"
@@ -430,6 +449,15 @@ export function PlayerView({
                   ))}
                   <ToolButton icon="undo" label="Undo" testId="tool-undo" disabled={pastCount === 0 && !hasDraft} onClick={undoAll} />
                 </div>
+                <button
+                  type="button"
+                  className="btn danger panel-clear"
+                  data-testid="tool-clear"
+                  disabled={!canClear}
+                  onClick={() => setConfirmClear(true)}
+                >
+                  Clear all
+                </button>
                 <h2>Colors</h2>
                 <div className="color-row" role="group" aria-label="Drawing color">
                   {DRAW_COLORS.map((swatch) => (
@@ -558,8 +586,8 @@ export function PlayerView({
           </header>
           <div className="sheet-body">
             <p className="tip">
-              The video stays on this page, so you can draw on it. Pause, open the wrench, pick a tool, and drag with one
-              finger. Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows.
+              The video stays on this page. Place a drawing with two fingers. Undo and Clear all are on the white bar.
+              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows.
             </p>
             {swing.notes ? <p className="note-block">{swing.notes}</p> : null}
             <div className="fps-row" role="group" aria-label="Frame step size">
@@ -594,8 +622,14 @@ export function PlayerView({
               <button type="button" className="btn" onClick={() => setDetails(true)}>
                 Edit details
               </button>
-              <button type="button" className="btn" disabled={drawings.length === 0} onClick={() => setConfirmClear(true)}>
-                Clear drawings
+              <button
+                type="button"
+                className="btn"
+                data-testid="help-clear"
+                disabled={!canClear}
+                onClick={() => setConfirmClear(true)}
+              >
+                Clear all
               </button>
               <button type="button" className="btn danger" data-testid="delete-swing" onClick={() => setConfirmDelete(true)}>
                 Delete swing
@@ -618,10 +652,11 @@ export function PlayerView({
       {confirmDelete && (
         <Dialog
           title="Delete this swing?"
-          body="The video and drawings will be removed from this phone."
+          body="The video, thumbnail, and drawings will be removed from this phone."
           confirmLabel="Delete"
           danger
           onCancel={() => setConfirmDelete(false)}
+          confirmTestId="confirm-delete-swing"
           onConfirm={() => {
             setConfirmDelete(false);
             void deleteSwing(swing.id)
@@ -637,16 +672,13 @@ export function PlayerView({
       )}
       {confirmClear && (
         <Dialog
-          title="Clear drawings?"
-          body="All drawings on this swing will be removed. You can undo it."
-          confirmLabel="Clear"
+          title="Clear all drawings?"
+          body="Every drawing on this swing will be removed. Undo puts them back."
+          confirmLabel="Clear all"
           danger
+          confirmTestId="confirm-clear"
           onCancel={() => setConfirmClear(false)}
-          onConfirm={() => {
-            commit([]);
-            setSelectedId(null);
-            setConfirmClear(false);
-          }}
+          onConfirm={clearAll}
         />
       )}
     </div>

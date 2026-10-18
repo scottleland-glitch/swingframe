@@ -7,6 +7,7 @@ export function Dialog({
   danger = false,
   alternateLabel,
   alternateDanger = false,
+  confirmTestId,
   onAlternate,
   onConfirm,
   onCancel,
@@ -17,6 +18,7 @@ export function Dialog({
   danger?: boolean;
   alternateLabel?: string;
   alternateDanger?: boolean;
+  confirmTestId?: string;
   onAlternate?: () => void;
   onConfirm: () => void;
   onCancel: () => void;
@@ -51,7 +53,7 @@ export function Dialog({
               {alternateLabel}
             </button>
           )}
-          <button type="button" className={danger ? 'btn danger' : 'btn primary'} onClick={onConfirm}>
+          <button type="button" className={danger ? 'btn danger' : 'btn primary'} data-testid={confirmTestId} onClick={onConfirm}>
             {confirmLabel}
           </button>
         </div>

@@ -327,12 +327,46 @@ export function updateSwing(id: string, partial: Partial<SwingMeta>): Promise<vo
   });
 }
 
+async function removeSwingRecords(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const db = await openDB();
+  const tx = db.transaction(['swings', 'videos'], 'readwrite');
+  const swings = tx.objectStore('swings');
+  const videos = tx.objectStore('videos');
+  for (const id of ids) {
+    swings.delete(id);
+    videos.delete(id);
+  }
+  await txDone(tx, 'Could not delete the swing.');
+}
+
+/** Drops the swing row (drawings and thumbnail) and the video bytes. */
 export function deleteSwing(id: string): Promise<void> {
+  return enqueue(() => removeSwingRecords([id]));
+}
+
+export function deleteSwings(ids: string[]): Promise<void> {
+  return enqueue(() => removeSwingRecords(ids));
+}
+
+/** Bytes still held for saved videos and thumbnails. */
+export function storedUsage(): Promise<number> {
   return enqueue(async () => {
     const db = await openDB();
-    const tx = db.transaction(['swings', 'videos'], 'readwrite');
-    tx.objectStore('swings').delete(id);
-    tx.objectStore('videos').delete(id);
-    await txDone(tx, 'Could not delete the swing.');
+    const tx = db.transaction(['swings', 'videos'], 'readonly');
+    const videos = await readStore<unknown[]>(tx.objectStore('videos'));
+    const swings = await readStore<unknown[]>(tx.objectStore('swings'));
+    await txDone(tx, 'Could not read storage.');
+    let total = 0;
+    for (const row of videos) {
+      const stored = storedBytes(row);
+      if (stored) total += stored.bytes.byteLength;
+    }
+    for (const row of swings) {
+      if (!row || typeof row !== 'object') continue;
+      const thumb = storedBytes((row as { thumbnail?: unknown }).thumbnail);
+      if (thumb) total += thumb.bytes.byteLength;
+    }
+    return total;
   });
 }

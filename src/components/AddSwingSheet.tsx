@@ -263,6 +263,7 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
                     type="button"
                     className="chip"
                     aria-pressed={club === item}
+                    data-testid={`club-${item}`}
                     onClick={() => setClub(item)}
                   >
                     {item}

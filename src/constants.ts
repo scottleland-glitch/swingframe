@@ -24,6 +24,7 @@ export const CLUBS = [
   'PW',
   'GW',
   'SW',
+  'LW',
   'Putter',
 ] as const;
 

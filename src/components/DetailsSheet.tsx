@@ -62,7 +62,7 @@ export function DetailsSheet({
           <span>Club</span>
           <div className="club-row">
             {CLUBS.map((item) => (
-              <button key={item} type="button" className="chip" aria-pressed={club === item} onClick={() => setClub(item)}>
+              <button key={item} type="button" className="chip" aria-pressed={club === item} data-testid={`club-${item}`} onClick={() => setClub(item)}>
                 {item}
               </button>
             ))}

@@ -1,0 +1,34 @@
+import { describe, expect, it } from 'vitest';
+import { clubGroup } from './clubs';
+import { viewLabel } from './format';
+
+describe('club groups', () => {
+  it('keeps woods, hybrids, and the putter out of the three groups', () => {
+    for (const club of ['3W', '5W', '3 wood', 'Hybrid', '4h', '4 hybrid', 'Putter', 'putter', '']) {
+      expect(clubGroup(club)).toBe('other');
+    }
+  });
+
+  it('maps drivers, irons, and wedges', () => {
+    expect(clubGroup('Driver')).toBe('driver');
+    expect(clubGroup('driver')).toBe('driver');
+    expect(clubGroup('DR')).toBe('driver');
+
+    for (const club of ['2i', '5i', '7I', '9i', '7 iron', '7-iron', 'long iron']) {
+      expect(clubGroup(club)).toBe('iron');
+    }
+
+    for (const club of ['PW', 'GW', 'SW', 'LW', 'AW', '52', '56°', '60 degree', 'gap wedge', 'Pitching Wedge']) {
+      expect(clubGroup(club)).toBe('wedge');
+    }
+  });
+});
+
+describe('view labels', () => {
+  it('abbreviates the camera angle on chips and cards', () => {
+    expect(viewLabel('dtl', true)).toBe('DTL');
+    expect(viewLabel('face', true)).toBe('FO');
+    expect(viewLabel('dtl')).toBe('Down the Line');
+    expect(viewLabel('face')).toBe('Face On');
+  });
+});

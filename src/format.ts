@@ -60,7 +60,7 @@ export function formatBytes(n: number): string {
 
 export function viewLabel(view: ViewAngle, short = false): string {
   if (view === 'dtl') return short ? 'DTL' : 'Down the Line';
-  return 'Face On';
+  return short ? 'FO' : 'Face On';
 }
 
 /** Compact clock for the player pill, like 0.00 or 1:02.40. */

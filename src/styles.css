@@ -145,7 +145,28 @@ img { max-width: 100%; }
   scrollbar-width: none;
 }
 .filters::-webkit-scrollbar, .club-row::-webkit-scrollbar, .tool-scroll::-webkit-scrollbar { display: none; }
-.filters { padding: 0 12px 8px; }
+.filter-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.filter-label {
+  flex: none;
+  width: 38px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.filter-row .filters { flex: 1; min-width: 0; padding: 0; }
 .chip {
   flex: none;
   min-height: 36px;
@@ -175,6 +196,18 @@ img { max-width: 100%; }
   -webkit-overflow-scrolling: touch;
 }
 .swing-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.swing-row { position: relative; border-radius: 18px; overflow: hidden; }
+.swing-delete {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 92px;
+  background: #8e2f2a;
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+}
 .swing-card {
   width: 100%;
   display: grid;
@@ -187,7 +220,11 @@ img { max-width: 100%; }
   background: var(--bg-elev);
   border: 1px solid var(--line);
   position: relative;
+  z-index: 1;
+  touch-action: pan-y;
+  transition: transform 160ms ease;
 }
+.swing-card.is-dragging { transition: none; }
 .swing-card.is-selected { border-color: var(--accent); }
 .thumb {
   width: 76px;
@@ -654,7 +691,7 @@ textarea { resize: vertical; }
 }
 .trim-readout { margin-left: auto; color: #666; font-size: 12px; font-variant-numeric: tabular-nums; }
 .bar-icon {
-  width: 56px;
+  width: 48px;
   height: 48px;
   min-width: 44px;
   min-height: 44px;
@@ -666,7 +703,8 @@ textarea { resize: vertical; }
 .bar-icon .icon { width: 26px; height: 26px; stroke-width: 1.7; }
 .bar-icon:disabled { opacity: 0.28; }
 .bar-play .icon { width: 30px; height: 30px; }
-.bar-undo { margin-left: auto; }
+.bar-clear { margin-left: auto; }
+.panel-clear { width: 100%; margin-top: 10px; }
 .bar-wrench.is-on { background: rgba(0, 0, 0, 0.08); }
 .tool-backdrop {
   position: absolute;
