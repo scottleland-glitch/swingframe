@@ -1,6 +1,6 @@
 # Swingframe
 
-A mobile-first golf swing notebook for Scott. Record a swing or pull one in from the camera roll, tag it **Down the Line** or **Face On**, then scrub it frame by frame and draw on it. Videos and drawings stay in the browser on that phone. There is no account and nothing is uploaded.
+A mobile-first golf swing notebook for Scott. Record a swing or pull one in from the camera roll, tag it **Down the Line** or **Face On**, then scrub it frame by frame and draw on it. Videos and drawings stay on that phone. There is no Swingframe account. Nothing is uploaded unless you connect your own Google Drive.
 
 It is a static web app, built to be added to an iPhone Home Screen and used one-handed on the range.
 
@@ -12,13 +12,14 @@ It is a static web app, built to be added to an iPhone Home Screen and used one-
 - **Drawing.** The video fills the screen. A round X, the time, and ? sit on top of it. The white bar has speed, color, frame step, play, clear, undo, and the wrench. Clear all asks first, then removes every drawing, and Undo can put them back. Open the wrench, pick a tool, and it closes so you draw on the full frame. Lines, circles, boxes, angles, freehand, and level lines are placed with two fingers (each finger is one end of a line; pinch sizes a circle or box; the angle joint sits between the fingers). Move uses two fingers to drag, pinch, and turn a drawing, and one finger on the white handles to fine-tune. Pinch-zoom is only on while Pinch is selected in the wrench. Drawings stay in the video's own coordinates.
 - **Compare.** Pick two swings. In portrait they stack; turn the phone sideways (or use a wide window) and they sit side by side. Each clip scrubs on its own. Sync matches progress through the swing, so the second clip follows the one you play or scrub. Synced playback plays one video and seeks the other, which is the reliable way to do this on an iPhone.
 - **Installable.** Web app manifest, home screen icons, standalone display, and a service worker so the app shell loads offline after the first visit. Saved videos are already on the device and do not need the network.
+- **Google Drive.** Optional. If this build has a Google client id, the library has a Google Drive button and the player ? menu can back up the open swing. Back up sends the video, thumbnail, and a small JSON file (details and drawings) into a Swingframe folder in that Google account. Cards show a Drive badge. Free up space deletes the local video only after that backup, and leaves the card. Download from Drive puts the video back. Restore from Drive imports swings that are in the folder but not on this phone. Without a client id, none of these controls appear.
 
 ## What's next
 
 - Read the real frame rate out of the file, instead of a 30/60/120/240 step setting.
 - Sync two angles on an impact frame you tap, not only by percent through the clip.
 - Export a still with the drawings burned in.
-- Back up or export the library, so a phone reset is not the end of the notes.
+- Export a backup you can move without a Google account.
 - Trim a clip down to the swing.
 
 ## Run it on your computer
@@ -80,4 +81,26 @@ Sound is off until you turn it on under **?**. Hearing impact is useful.
 - iOS can still delete website data if the app is never opened, or if it refuses persistent storage. Add Swingframe to the Home Screen and open it now and then. Deleting the Home Screen icon can delete the saved swings.
 - iPhone videos are often HEVC. Safari plays them. Some desktop browsers will not, and will show a message on the player. Review those clips on the phone.
 - Frame stepping is only as precise as the browser's seek. The fps control sets the step size; it does not re-encode the video.
-- There is no analytics and no backend. After the app files load, video never leaves the phone.
+- There is no analytics and no backend. Video leaves the phone only when you tap a Google Drive backup, and then only to your own Drive.
+- Google sign-in on the iPhone home screen uses a full-page redirect, because a popup cannot talk back to the installed app. In Safari or desktop Chrome it tries a popup first, and switches to the full page if the popup is blocked. The sign-in lasts about an hour.
+
+## Connect Google Drive
+
+Swingframe talks to Google from the phone. There is no server in the middle. The client id is baked in when GitHub Actions builds the site. If the id is missing, the Drive buttons stay hidden and the rest of the app works as before.
+
+Do this once, signed in as the Google account that should own the backups (Scott's Gmail is fine).
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/) and create a project named **Swingframe**.
+2. Go to **APIs & Services → Library**, search for **Google Drive API**, and click **Enable**.
+3. Go to **APIs & Services → OAuth consent screen**. Choose **External** and create the app. App name: Swingframe. User support email and developer contact: your Gmail. Save.
+4. On the consent screen, open **Data access** (or Scopes) and add this scope: `https://www.googleapis.com/auth/drive.file`. The description is that the app can see, edit, create, and delete only the Drive files it uses. Do not add full Drive access.
+5. Add your own Gmail under **Test users**. Leave the app in **Testing**. Do not click Publish. In testing mode only those test users can sign in, which is what you want.
+6. Go to **APIs & Services → Credentials → Create credentials → OAuth client ID**. Application type: **Web application**. Name it Swingframe.
+7. Under **Authorized JavaScript origins** add `https://scottleland-glitch.github.io` (no path, no trailing slash).
+8. Under **Authorized redirect URIs** add `https://scottleland-glitch.github.io/swingframe/` (with the path and the trailing slash). The popup sign-in uses the JavaScript origin. The iPhone home-screen sign-in uses the redirect URI.
+9. Create the client and copy the **Client ID**. It ends in `.apps.googleusercontent.com`. You do not need the client secret.
+10. On GitHub, open the `swingframe` repo → **Settings → Secrets and variables → Actions → Variables → New repository variable**. Name it exactly `VITE_GOOGLE_CLIENT_ID`. Paste the client id as the value. This is not a secret: it is visible in the built web app.
+11. Run the **Deploy GitHub Pages** workflow again (Actions → Deploy GitHub Pages → Run workflow), or push a commit. The build reads that variable. An old deploy does not pick it up by itself.
+12. On the iPhone, close Swingframe fully and open it again. The library subtitle should say **Version 8**, and **Google Drive** should appear under the storage line. Tap it, then **Connect Google Drive**. Choose the same Gmail you added as a test user. Back up a swing, then **Free up space** if the phone is full. Open that swing and tap **Download from Drive** to get the video back.
+
+To try this on a computer, also add `http://localhost:5173` as a JavaScript origin and `http://localhost:5173/swingframe/` as a redirect URI, and start the dev server with `VITE_GOOGLE_CLIENT_ID=your-id npm run dev`. The phone does not need that.

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { DRAW_COLORS, FPS_OPTIONS, SPEEDS } from '../constants';
-import { deleteSwing, getVideo, listSwings } from '../db';
-import { cx, formatDate, formatRate, formatScrub, formatTime, viewLabel } from '../format';
+import { deleteSwing, getVideo, listSwings, releaseLocalVideo } from '../db';
+import { backupSwing, downloadSwingVideo } from '../driveApi';
+import { DRIVE_ENABLED } from '../driveConfig';
+import { connectGoogle, googleConnected } from '../googleAuth';
+import { cx, errorMessage, formatDate, formatRate, formatScrub, formatTime, viewLabel } from '../format';
 import { withColor } from '../geometry';
 import type { SwingMeta, Tool } from '../types';
 import { useSwing } from '../useSwing';
@@ -74,7 +77,7 @@ export function PlayerView({
   onCompare: (id: string) => void;
   onChanged: () => void;
 }) {
-  const { swing, blob, drawings, pastCount, load, saveError, commit, undo, patch } = useSwing(id);
+  const { swing, blob, drawings, pastCount, load, saveError, commit, undo, patch, reload } = useSwing(id);
   const stageRef = useRef<VideoEngine>(null);
   const [tool, setTool] = useState<Tool>('line');
   const [color, setColor] = useState<string>(DRAW_COLORS[0]);
@@ -86,6 +89,9 @@ export function PlayerView({
   const [playError, setPlayError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmFree, setConfirmFree] = useState(false);
+  const [driveBusy, setDriveBusy] = useState(false);
+  const [driveNote, setDriveNote] = useState<string | null>(null);
   const [details, setDetails] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -231,6 +237,63 @@ export function PlayerView({
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+  }
+
+  async function runDrive(action: () => Promise<void>) {
+    setDriveBusy(true);
+    setDriveNote(null);
+    try {
+      await action();
+      await reload();
+      onChanged();
+    } catch (err) {
+      setDriveNote(errorMessage(err, 'Google Drive did not finish.'));
+    } finally {
+      setDriveBusy(false);
+    }
+  }
+
+  if (load.status === 'cloud' && swing) {
+    return (
+      <div className="screen">
+        <header className="topbar">
+          <button type="button" className="icon-btn" aria-label="Back" onClick={onBack}>
+            <Icon name="back" />
+          </button>
+          <div className="titles">
+            <h1>{swing.club || 'Swing'}</h1>
+            <p>
+              {viewLabel(swing.view, true)} · On Google Drive
+            </p>
+          </div>
+        </header>
+        <div className="empty">
+          <h2>Video is on Drive</h2>
+          <p>The card, thumbnail, and drawings are still on this phone. The video itself was removed to free space.</p>
+          {driveNote && <p className="banner">{driveNote}</p>}
+          {DRIVE_ENABLED ? (
+            <button
+              type="button"
+              className="btn primary"
+              data-testid="download-drive"
+              disabled={driveBusy}
+              onClick={() => {
+                void runDrive(async () => {
+                  await downloadSwingVideo(swing, setDriveNote);
+                });
+              }}
+            >
+              Download from Drive
+            </button>
+          ) : (
+            <p>This copy of Swingframe does not have Google sign-in, so the video cannot be downloaded.</p>
+          )}
+          <button type="button" className="btn" onClick={onBack}>
+            Back to library
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (load.status !== 'ready' || !swing || !blob) {
@@ -615,6 +678,7 @@ export function PlayerView({
                 {loop ? 'Loop on' : 'Loop off'}
               </button>
             </div>
+            {driveNote && <p className="banner">{driveNote}</p>}
             <p className="faint" data-testid="help-version">
               Version {APP_VERSION}
             </p>
@@ -631,6 +695,44 @@ export function PlayerView({
               >
                 Clear all
               </button>
+              {DRIVE_ENABLED && !googleConnected() && (
+                <button
+                  type="button"
+                  className="btn"
+                  data-testid="help-drive-connect"
+                  disabled={driveBusy}
+                  onClick={() => {
+                    setDriveBusy(true);
+                    setDriveNote(null);
+                    void connectGoogle()
+                      .then(() => setDriveNote('Connected to Google Drive.'))
+                      .catch((err: unknown) => setDriveNote(errorMessage(err, 'Google sign-in did not finish.')))
+                      .finally(() => setDriveBusy(false));
+                  }}
+                >
+                  Connect Google Drive
+                </button>
+              )}
+              {DRIVE_ENABLED && (
+                <button
+                  type="button"
+                  className="btn"
+                  data-testid="backup-swing"
+                  disabled={driveBusy}
+                  onClick={() => {
+                    void runDrive(async () => {
+                      await backupSwing({ ...swing, drawings }, blob, setDriveNote);
+                    });
+                  }}
+                >
+                  Back up to Drive
+                </button>
+              )}
+              {DRIVE_ENABLED && swing.drive?.videoId && (
+                <button type="button" className="btn" data-testid="free-swing" disabled={driveBusy} onClick={() => setConfirmFree(true)}>
+                  Free up space
+                </button>
+              )}
               <button type="button" className="btn danger" data-testid="delete-swing" onClick={() => setConfirmDelete(true)}>
                 Delete swing
               </button>
@@ -667,6 +769,23 @@ export function PlayerView({
               .catch((err: unknown) => {
                 setPlayError(err instanceof Error ? err.message : 'Could not delete the swing.');
               });
+          }}
+        />
+      )}
+      {confirmFree && swing.drive?.videoId && (
+        <Dialog
+          title="Free up space?"
+          body="The video stays on Google Drive. This phone keeps the card, thumbnail, and drawings. You can download the video again."
+          confirmLabel="Remove video"
+          danger
+          confirmTestId="confirm-free-swing"
+          onCancel={() => setConfirmFree(false)}
+          onConfirm={() => {
+            setConfirmFree(false);
+            void runDrive(async () => {
+              await releaseLocalVideo(swing.id);
+              setDriveNote('Removed the video from this phone.');
+            });
           }}
         />
       )}

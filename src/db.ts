@@ -286,7 +286,7 @@ export function saveSwing(meta: SwingMeta, video: Blob): Promise<void> {
         thumbnail = null;
       }
     }
-    const record: StoredSwing = { ...meta, thumbnail };
+    const record: StoredSwing = { ...meta, thumbnail, videoKept: true };
     const db = await openDB();
     const tx = db.transaction(['swings', 'videos'], 'readwrite');
     tx.objectStore('swings').put(record);
@@ -347,6 +347,54 @@ export function deleteSwing(id: string): Promise<void> {
 
 export function deleteSwings(ids: string[]): Promise<void> {
   return enqueue(() => removeSwingRecords(ids));
+}
+
+/** Drop the video bytes for a swing that already lives on Google Drive. */
+export function releaseLocalVideo(id: string): Promise<void> {
+  return enqueue(async () => {
+    const db = await openDB();
+    const readTx = db.transaction('swings', 'readonly');
+    const current = await readStore<StoredSwing | undefined>(readTx.objectStore('swings'), id);
+    await txDone(readTx, 'Could not read that swing.');
+    if (!current) throw new Error('That swing is no longer on this phone.');
+    const drive = (current as { drive?: { videoId?: string } }).drive;
+    if (!drive?.videoId) throw new Error('Back this swing up to Google Drive before removing it from the phone.');
+    const tx = db.transaction(['swings', 'videos'], 'readwrite');
+    tx.objectStore('swings').put({ ...current, videoKept: false });
+    tx.objectStore('videos').delete(id);
+    await txDone(tx, 'Could not free that space.');
+  });
+}
+
+/** Put a downloaded video back next to the card. */
+export function keepLocalVideo(id: string, video: Blob): Promise<void> {
+  return enqueue(async () => {
+    const videoRecord = await toStoredBytes(video, playbackMime(video.type));
+    videoRecord.type = playbackMime(video.type || videoRecord.type);
+    const expected = videoRecord.bytes.byteLength;
+    if (expected === 0) throw new Error('That video was empty and was not saved.');
+    const db = await openDB();
+    const readTx = db.transaction('swings', 'readonly');
+    const current = await readStore<StoredSwing | undefined>(readTx.objectStore('swings'), id);
+    await txDone(readTx, 'Could not read that swing.');
+    if (!current) throw new Error('That swing is no longer on this phone.');
+    const tx = db.transaction(['swings', 'videos'], 'readwrite');
+    tx.objectStore('swings').put({
+      ...current,
+      videoKept: true,
+      byteSize: expected,
+      mimeType: videoRecord.type || current.mimeType,
+    });
+    tx.objectStore('videos').put(videoRecord, id);
+    await txDone(tx, 'Could not save the video on this phone.');
+    const checkTx = db.transaction('videos', 'readonly');
+    const saved = await readStore<unknown>(checkTx.objectStore('videos'), id);
+    await txDone(checkTx, 'Could not confirm the video was saved.');
+    const kept = storedBytes(saved);
+    if (!kept || kept.bytes.byteLength !== expected) {
+      throw new Error('The video did not stay on this phone. Try the download again.');
+    }
+  });
 }
 
 /** Bytes still held for saved videos and thumbnails. */

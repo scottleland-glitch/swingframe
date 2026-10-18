@@ -92,7 +92,9 @@ img { max-width: 100%; }
   flex: none;
 }
 .brand-mark.big { width: 68px; height: 68px; border-radius: 20px; margin-bottom: 8px; }
-.usage { text-align: right; }
+.usage { text-align: right; margin: 0; }
+.library-side { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.library-side .text-btn { min-height: 32px; }
 
 .icon {
   width: 22px;
@@ -257,6 +259,17 @@ img { max-width: 100%; }
   color: var(--dtl);
 }
 .badge.face { background: #1c2612; color: var(--face); }
+.card-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.drive-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #1a2740;
+  color: #9ec1ff;
+}
 .pick-mark {
   position: absolute;
   left: 18px;

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { clubGroup, type ClubFilter } from '../clubs';
 import { deleteSwings, listSwings, storedUsage } from '../db';
+import { DRIVE_ENABLED } from '../driveConfig';
 import { cx, formatBytes, formatDate, formatDuration, viewLabel } from '../format';
 import { isIos, isStandalone, requestPersistentStorage, storageGet, storageSet } from '../platform';
 import type { SwingMeta, ViewAngle } from '../types';
 import { APP_VERSION } from '../version';
 import { Dialog } from './Dialog';
+import { DriveSheet } from './DriveSheet';
 import { Icon } from './Icons';
 
 type ViewFilter = 'all' | ViewAngle;
@@ -46,6 +48,7 @@ export function LibraryView({
   const [chosen, setChosen] = useState<string[]>([]);
   const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
   const [revealedId, setRevealedId] = useState<string | null>(null);
+  const [driveOpen, setDriveOpen] = useState(false);
   const [usage, setUsage] = useState<number | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [hideInstall, setHideInstall] = useState(() => storageGet('swingframe.install.v1') === '1');
@@ -133,11 +136,18 @@ export function LibraryView({
             </p>
           </div>
         </div>
-        {usage != null && (
-          <p className="usage" data-testid="storage-usage">
-            {formatBytes(usage)} on this phone
-          </p>
-        )}
+        <div className="library-side">
+          {usage != null && (
+            <p className="usage" data-testid="storage-usage">
+              {formatBytes(usage)} on this phone
+            </p>
+          )}
+          {DRIVE_ENABLED && (
+            <button type="button" className="text-btn" data-testid="drive-menu" onClick={() => setDriveOpen(true)}>
+              Google Drive
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="filter-groups">
@@ -339,6 +349,17 @@ export function LibraryView({
         )}
       </div>
 
+      {driveOpen && DRIVE_ENABLED && (
+        <DriveSheet
+          swings={swings}
+          onClose={() => setDriveOpen(false)}
+          onChanged={async () => {
+            const rows = await listSwings();
+            setSwings(rows);
+            refreshUsage();
+          }}
+        />
+      )}
       {pendingDelete && (
         <Dialog
           title={pendingDelete.length === 1 ? 'Delete this swing?' : `Delete ${pendingDelete.length} swings?`}
@@ -498,7 +519,14 @@ function SwingRow({
           </span>
           {swing.notes ? <span className="swing-notes">{swing.notes}</span> : null}
         </span>
-        <span className={cx('badge', swing.view)}>{viewLabel(swing.view, true)}</span>
+        <span className="card-badges">
+          <span className={cx('badge', swing.view)}>{viewLabel(swing.view, true)}</span>
+          {swing.drive?.videoId && (
+            <span className="drive-badge" data-testid="drive-badge">
+              {swing.videoKept === false ? 'Drive only' : 'Drive'}
+            </span>
+          )}
+        </span>
         {mark != null && (
           <span className={cx('pick-mark', selected && 'on')} aria-hidden="true">
             {mark}

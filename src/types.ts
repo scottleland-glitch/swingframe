@@ -22,6 +22,15 @@ export type Drawing =
   | { id: string; type: 'hline'; color: string; y: number }
   | { id: string; type: 'vline'; color: string; x: number };
 
+/** Files this app created in the user's Google Drive. */
+export interface DriveLink {
+  folderId: string;
+  videoId: string;
+  thumbId: string | null;
+  metaId: string;
+  backedUpAt: number;
+}
+
 export interface SwingMeta {
   id: string;
   view: ViewAngle;
@@ -45,6 +54,10 @@ export interface SwingMeta {
   byteSize: number;
   thumbnail: Blob | null;
   drawings: Drawing[];
+  /** Set after a successful backup. Absent means it has never been backed up. */
+  drive?: DriveLink | null;
+  /** False after Free up space removes the local video. Absent means the video should still be here. */
+  videoKept?: boolean;
 }
 
 export type Route =

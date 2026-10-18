@@ -5,6 +5,7 @@ import type { Drawing, SwingMeta } from './types';
 export type SwingLoad =
   | { status: 'loading' }
   | { status: 'missing'; message: string }
+  | { status: 'cloud' }
   | { status: 'error'; message: string }
   | { status: 'ready' };
 
@@ -19,48 +20,66 @@ export function useSwing(id: string) {
   const drawingsRef = useRef<Drawing[]>([]);
   const pastRef = useRef<Drawing[][]>([]);
   const dirty = useRef(false);
+  const generation = useRef(0);
   const ready = load.status === 'ready';
 
-  useEffect(() => {
-    let cancel = false;
-    dirty.current = false;
+  const reload = useCallback(async () => {
+    const gen = ++generation.current;
+    if (dirty.current) {
+      const snapshot = drawingsRef.current;
+      try {
+        await updateSwing(id, { drawings: snapshot });
+        if (drawingsRef.current === snapshot) dirty.current = false;
+      } catch {
+        /* Opening the swing still matters more than this flush. */
+      }
+    }
+    if (generation.current !== gen) return;
     setLoad({ status: 'loading' });
     setSaveError(null);
-    void (async () => {
-      try {
-        const [meta, video] = await Promise.all([getSwing(id), getVideo(id)]);
-        if (cancel) return;
-        if (!meta || !video) {
-          setSwing(null);
-          setBlob(null);
-          setLoad({
-            status: 'missing',
-            message: meta
-              ? 'The video for this swing did not stay on this phone. Import it again.'
-              : "This swing isn't on this phone.",
-          });
-          return;
-        }
-        const next = Array.isArray(meta.drawings) ? meta.drawings : [];
+    try {
+      const [meta, video] = await Promise.all([getSwing(id), getVideo(id)]);
+      if (generation.current !== gen) return;
+      if (!meta) {
+        setSwing(null);
+        setBlob(null);
+        setLoad({ status: 'missing', message: "This swing isn't on this phone." });
+        return;
+      }
+      const next = Array.isArray(meta.drawings) ? meta.drawings : [];
+      if (!video) {
         drawingsRef.current = next;
         pastRef.current = [];
         setDrawings(next);
         setPast([]);
         setSwing({ ...meta, drawings: next });
-        setBlob(video);
-        setLoad({ status: 'ready' });
-      } catch (err) {
-        if (cancel) return;
-        setLoad({
-          status: 'error',
-          message: err instanceof Error ? err.message : 'Could not open that swing.',
-        });
+        setBlob(null);
+        setLoad(
+          meta.drive?.videoId
+            ? { status: 'cloud' }
+            : { status: 'missing', message: 'The video for this swing did not stay on this phone. Import it again.' },
+        );
+        return;
       }
-    })();
-    return () => {
-      cancel = true;
-    };
+      drawingsRef.current = next;
+      pastRef.current = [];
+      setDrawings(next);
+      setPast([]);
+      setSwing({ ...meta, drawings: next });
+      setBlob(video);
+      setLoad({ status: 'ready' });
+    } catch (err) {
+      if (generation.current !== gen) return;
+      setLoad({
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Could not open that swing.',
+      });
+    }
   }, [id]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   useEffect(() => {
     if (!ready) return;
@@ -135,5 +154,6 @@ export function useSwing(id: string) {
     commit,
     undo,
     patch,
+    reload,
   };
 }

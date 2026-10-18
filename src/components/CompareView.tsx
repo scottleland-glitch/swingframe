@@ -335,7 +335,9 @@ function Pane({
             <span>{viewLabel(swing.swing.view)}</span>
           </>
         ) : (
-          <span>{swing.load.status === 'loading' ? 'Loading…' : 'Missing swing'}</span>
+          <span>
+            {swing.load.status === 'loading' ? 'Loading…' : swing.load.status === 'cloud' ? 'On Drive' : 'Missing swing'}
+          </span>
         )}
       </div>
       <div className="pane-stage">
@@ -362,7 +364,9 @@ function Pane({
                 ? swing.load.message
                 : swing.load.status === 'missing'
                   ? swing.load.message
-                  : 'Loading…'}
+                  : swing.load.status === 'cloud'
+                    ? 'This video is on Google Drive. Open the swing and download it before comparing.'
+                    : 'Loading…'}
             </p>
           </div>
         )}
