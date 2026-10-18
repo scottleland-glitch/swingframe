@@ -25,12 +25,24 @@ function slicePath(path: TracerPoint[], elapsed: number | null): { x: number; y:
   return visible;
 }
 
+/** Every sample is a vertex. Dense samples make this polyline read as a smooth curve. */
 function strokeSmooth(ctx: CanvasRenderingContext2D, points: { x: number; y: number }[], width: number, height: number) {
+  const px = (p: { x: number; y: number }) => p.x * width;
+  const py = (p: { x: number; y: number }) => p.y * height;
   ctx.beginPath();
-  ctx.moveTo(points[0].x * width, points[0].y * height);
-  for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(points[i].x * width, points[i].y * height);
+  ctx.moveTo(px(points[0]), py(points[0]));
+  if (points.length < 3) {
+    for (let i = 1; i < points.length; i++) ctx.lineTo(px(points[i]), py(points[i]));
+    ctx.stroke();
+    return;
   }
+  for (let i = 1; i < points.length - 1; i++) {
+    const xc = (px(points[i]) + px(points[i + 1])) / 2;
+    const yc = (py(points[i]) + py(points[i + 1])) / 2;
+    ctx.quadraticCurveTo(px(points[i]), py(points[i]), xc, yc);
+  }
+  const last = points[points.length - 1];
+  ctx.lineTo(px(last), py(last));
   ctx.stroke();
 }
 

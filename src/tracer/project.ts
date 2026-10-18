@@ -62,13 +62,17 @@ function cameraFrame(camera: TracerCamera, ballY: number): Frame {
   return { at, forward, right, up, fov };
 }
 
+function focalLength(fov: number, height: number): number {
+  return height / 2 / Math.tan(((fov * Math.PI) / 180) / 2);
+}
+
 function projectRaw(sample: FlightSample, frame: Frame, width: number, height: number): { x: number; y: number } | null {
   const rel = sub({ x: sample.x, y: sample.y, z: sample.z }, frame.at);
   const z = dot(rel, frame.forward);
   if (z < 0.05) return null;
   const x = dot(rel, frame.right);
   const y = dot(rel, frame.up);
-  const focal = height / 2 / Math.tan(((frame.fov * Math.PI) / 180) / 2);
+  const focal = focalLength(frame.fov, height);
   return {
     x: width / 2 + focal * (x / z),
     y: height / 2 - focal * (y / z),
@@ -76,11 +80,35 @@ function projectRaw(sample: FlightSample, frame: Frame, width: number, height: n
 }
 
 /**
+ * Extra sideways pixels so a down-the-line fade reads as a bend.
+ * The camera sits in the shot plane, and perspective squeezes the Magnus
+ * residual onto the start line, so the stroke looks like a straight tilt.
+ * This is only the part of the side movement that is off the straight line
+ * between the start line and the landing. The landing pixel is unchanged,
+ * and it stays the true angle. The scale is the geometric mean of the
+ * tripod distance and the carry — camera distance and field of view still
+ * set how big that bend is.
+ */
+function magnusBowPx(sample: FlightSample, heading: number, endResidual: number, carry: number, distance: number, focal: number): number {
+  if (carry < 1 || distance < 0.3) return 0;
+  const residual = sample.x - heading * sample.z;
+  const linear = endResidual * (sample.z / carry);
+  // The side residual lags a straight line out to the landing, so the stroke
+  // leaves that line and comes back. A fade returns from the left; a draw
+  // returns from the right. Endpoints stay on the real landing.
+  const bow = residual - linear;
+  const range = carry + distance;
+  const perMeter = 1 / Math.sqrt(range * distance) - 1 / range;
+  return bow * perMeter * focal;
+}
+
+/**
  * Project the flight. The aim tap is the intended line only: world +Z on the
  * ground, which sets which way the camera is turned. It is not the landing.
  * Launch direction and spin are already in the samples, so the ball can finish
- * left or right of that line. Camera height, distance, and field of view are
- * what change the arc's size.
+ * left or right of that line. Side spin bends the stroke off the start line
+ * instead of tilting a straight segment. Camera height, distance, and field
+ * of view are what change the arc's size.
  */
 export function projectFlight(
   samples: FlightSample[],
@@ -92,10 +120,25 @@ export function projectFlight(
 ): TracerPoint[] {
   if (samples.length < 2 || width < 2 || height < 2) return [];
   const frame = cameraFrame(camera, ball.y);
+  let heading = 0;
+  for (const sample of samples) {
+    if (sample.z > 8) {
+      heading = sample.x / sample.z;
+      break;
+    }
+  }
+  const landing = samples[samples.length - 1];
+  const carry = landing.z;
+  const endResidual = landing.x - heading * carry;
+  const focal = focalLength(frame.fov, height);
+  const drawBow = camera.view !== 'face';
   const raw: TracerPoint[] = [];
   for (const sample of samples) {
     const pixel = projectRaw(sample, frame, width, height);
     if (!pixel) continue;
+    if (drawBow) {
+      pixel.x += magnusBowPx(sample, heading, endResidual, carry, camera.distance, focal);
+    }
     raw.push({ x: pixel.x, y: pixel.y, t: sample.t });
   }
   if (raw.length < 2) return [];

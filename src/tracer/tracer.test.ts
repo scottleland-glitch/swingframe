@@ -215,6 +215,31 @@ describe('foresight text', () => {
   });
 });
 
+function lineDeviation(path: TracerPoint[], width: number, height: number): number {
+  const xs = path.map((point) => point.x * width);
+  const ys = path.map((point) => point.y * height);
+  const n = path.length;
+  const mx = xs.reduce((sum, value) => sum + value, 0) / n;
+  const my = ys.reduce((sum, value) => sum + value, 0) / n;
+  let sxx = 0;
+  let syy = 0;
+  let sxy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - mx;
+    const dy = ys[i] - my;
+    sxx += dx * dx;
+    syy += dy * dy;
+    sxy += dx * dy;
+  }
+  const ang = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  let max = 0;
+  for (let i = 0; i < n; i++) {
+    const dev = Math.abs(-(xs[i] - mx) * Math.sin(ang) + (ys[i] - my) * Math.cos(ang));
+    if (dev > max) max = dev;
+  }
+  return max;
+}
+
 function imageRays(path: TracerPoint[], ball: Pt, target: Pt, width: number, height: number) {
   const bx = ball.x * width;
   const by = ball.y * height;
@@ -322,6 +347,50 @@ describe('camera projection', () => {
     const driverAlong = imageRays(projectFlight(samples, camera, ball, target, width, height), ball, target, width, height).at(-1)!.along;
     const wedgeAlong = imageRays(projectFlight(wedge.samples, camera, ball, target, width, height), ball, target, width, height).at(-1)!.along;
     expect(wedgeAlong).toBeLessThan(driverAlong);
+  });
+
+  it('draws a fade as a curve off the start line, not a tilted straight stroke', () => {
+    const fade = simulateShot({ ...emptyShot(), ballSpeed: 155, vla: 14, hla: -3, spin: 2800, spinAxis: 4 })!;
+    const straight = driver(0, 0)!;
+    const push = simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, hla: -3, spin: 2500, spinAxis: 0 })!;
+    const portrait = { view: 'dtl' as const, height: 1.4, distance: 3.5, fov: 60 };
+    const tee = { x: 0.5, y: 0.78 };
+    const aim = { x: 0.5, y: 0.32 };
+    const width = 1080;
+    const height = 1920;
+    const fadePath = projectFlight(fade.samples, portrait, tee, aim, width, height);
+    const straightPath = projectFlight(straight.samples, portrait, tee, aim, width, height);
+    const pushPath = projectFlight(push.samples, portrait, tee, aim, width, height);
+
+    expect(fadePath.length).toBeGreaterThan(120);
+    expect(lineDeviation(straightPath, width, height)).toBeLessThan(2);
+    expect(lineDeviation(fadePath, width, height)).toBeGreaterThan(50);
+
+    const fadeRays = imageRays(fadePath, tee, aim, width, height);
+    const started = fadeRays.find((ray) => ray.t >= 0.25)!;
+    expect(started.across).toBeLessThan(-40);
+    expect(started.across).toBeGreaterThan(-180);
+    const landing = fadeRays.at(-1)!;
+    const leftmost = Math.min(...fadeRays.map((ray) => ray.across));
+    expect(landing.across).toBeLessThan(-8);
+    expect(landing.across).toBeGreaterThan(leftmost + 60);
+    expect(fadePath.every((point) => point.x > 0.05 && point.x < 0.95 && point.y > 0.05 && point.y < 0.98)).toBe(true);
+
+    const straightRays = imageRays(straightPath, tee, aim, width, height);
+    expect(Math.abs(straightRays.at(-1)!.across)).toBeLessThan(1.5);
+    expect(Math.max(...straightRays.map((ray) => ray.along))).toBeGreaterThan(straightRays.at(-1)!.along + 20);
+    const straightLanding = straightPath.at(-1)!;
+    expect(straightLanding.y).toBeGreaterThan(0.35);
+    expect(straightLanding.y).toBeLessThan(tee.y - 0.1);
+    expect(Math.min(...straightPath.map((point) => point.y))).toBeLessThan(straightLanding.y - 0.05);
+
+    expect(push.curveYd).toBeLessThan(-11);
+    expect(push.curveYd).toBeGreaterThan(-16);
+    const pushLanding = imageRays(pushPath, tee, aim, width, height).at(-1)!;
+    const hFov = 2 * Math.atan(Math.tan(((60 * Math.PI) / 180) / 2) * (width / height));
+    const degrees = (pushLanding.across / width) * ((hFov * 180) / Math.PI);
+    expect(degrees).toBeLessThan(-2);
+    expect(degrees).toBeGreaterThan(-4.5);
   });
 
   it('shrinks the arc in the frame when the field of view opens', () => {
