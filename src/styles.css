@@ -755,6 +755,42 @@ textarea { resize: vertical; }
 }
 .aim-reticle[data-kind="ball"] .aim-reticle-label { color: #ffe14a; }
 .aim-reticle[data-kind="ball"] .aim-reticle-ring { box-shadow: 0 0 0 1px #111, 0 0 0 6px rgba(255, 225, 74, 0.35); }
+.aim-reticle[data-kind="ground"] .aim-reticle-label { color: #b6f5c8; }
+.aim-reticle[data-kind="ground"] .aim-reticle-ring { box-shadow: 0 0 0 1px #111, 0 0 0 6px rgba(150, 230, 170, 0.4); }
+.aim-confirm {
+  position: absolute;
+  z-index: 5;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  color: #102016;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 0 1px #111, 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+.aim-confirm .icon { width: 20px; height: 20px; }
+.aim-guides {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.tool-backdrop.is-tracer {
+  background: transparent;
+  pointer-events: none;
+}
+.tool-backdrop.is-tracer .tool-panel {
+  pointer-events: auto;
+  max-height: min(42dvh, 380px);
+}
 .tracer-lock {
   border: 0;
   margin: 0;

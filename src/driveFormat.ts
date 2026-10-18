@@ -178,6 +178,8 @@ function sanitizeTracer(value: unknown): TracerCalibration | null {
   return {
     ball: sanitizePoint(rec.ball),
     target: sanitizePoint(rec.target),
+    aimSuggested: rec.aimSuggested === true,
+    ground: sanitizePoint(rec.ground),
     impactTime: finiteNumber(rec.impactTime),
     cameraHeight,
     cameraDistance,

@@ -28,6 +28,27 @@ function stageTesseract() {
 
 stageTesseract();
 
+// Pose runs on the phone. Copy the vision runtime and the lite landmark model
+// next to the app so foot detection never fetches a CDN.
+function stagePose() {
+  const root = resolve('public/pose');
+  rmSync(root, { recursive: true, force: true });
+  const wasmOut = resolve(root, 'wasm');
+  mkdirSync(wasmOut, { recursive: true });
+  const wasmDir = resolve('node_modules/@mediapipe/tasks-vision/wasm');
+  for (const name of [
+    'vision_wasm_internal.js',
+    'vision_wasm_internal.wasm',
+    'vision_wasm_nosimd_internal.js',
+    'vision_wasm_nosimd_internal.wasm',
+  ]) {
+    cpSync(resolve(wasmDir, name), resolve(wasmOut, name));
+  }
+  cpSync(resolve('vendor/pose/pose_landmarker_lite.task'), resolve(root, 'pose_landmarker_lite.task'));
+}
+
+stagePose();
+
 // vite-plugin-pwa appends the manifest and includeAssets after Workbox applies
 // modifyURLPrefix, which would also cache those files at the github.io root.
 // Drop any precache URL that is not under this app.
@@ -140,8 +161,8 @@ export default defineConfig({
       },
       workbox: {
         cacheId: 'swingframe',
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,gz}'],
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,gz,wasm,task}'],
+        maximumFileSizeToCacheInBytes: 16 * 1024 * 1024,
         // Precache URLs from the build are root-relative. Prefix them so the
         // worker only caches this app, not the github.io origin root.
         modifyURLPrefix: {

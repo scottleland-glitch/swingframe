@@ -121,6 +121,8 @@ describe('backup json', () => {
     meta.tracer = {
       ball: { x: 0.5, y: 0.7 },
       target: { x: 0.52, y: 0.3 },
+      aimSuggested: true,
+      ground: { x: 0.48, y: 0.46 },
       impactTime: 1.25,
       cameraHeight: 1.5,
       cameraDistance: 3,
@@ -137,16 +139,22 @@ describe('backup json', () => {
     expect(parsed?.shot?.sources.carry).toBe('typed');
     expect(parsed?.tracer?.impactTime).toBe(1.25);
     expect(parsed?.tracer?.ball).toEqual({ x: 0.5, y: 0.7 });
+    expect(parsed?.tracer?.ground).toEqual({ x: 0.48, y: 0.46 });
+    expect(parsed?.tracer?.aimSuggested).toBe(true);
     expect(parsed?.tracer?.locked).toBe(true);
     expect(parsed?.tracer?.showAim).toBe(true);
     expect(parsed?.tracer?.showTracer).toBe(false);
     const fadedRaw = JSON.parse(JSON.stringify(toBackup(meta, drive))) as { tracer: Record<string, unknown> };
     delete fadedRaw.tracer.showAim;
     delete fadedRaw.tracer.showTracer;
+    delete fadedRaw.tracer.ground;
+    delete fadedRaw.tracer.aimSuggested;
     const faded = parseBackup(JSON.stringify(fadedRaw));
     expect(faded?.tracer?.showAim).toBe(false);
     expect(faded?.tracer?.showTracer).toBe(true);
     expect(faded?.tracer?.locked).toBe(true);
+    expect(faded?.tracer?.ground).toBeNull();
+    expect(faded?.tracer?.aimSuggested).toBe(false);
     const legacy = JSON.parse(JSON.stringify(toBackup(sample(), drive))) as Record<string, unknown>;
     delete legacy.shot;
     delete legacy.tracer;

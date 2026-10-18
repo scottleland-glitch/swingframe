@@ -1,6 +1,6 @@
 import { paint } from '../draw';
-import type { Drawing, Pt } from '../types';
-import { paintTracer } from './paintTracer';
+import type { Drawing } from '../types';
+import { paintTracer, type TracerMarks } from './paintTracer';
 import type { TracerPoint } from './project';
 import { playClock, tracerPlayhead } from './timing';
 
@@ -47,7 +47,7 @@ export interface ExportRequest {
   clipEnd: number;
   videoWidth: number;
   videoHeight: number;
-  marks: { ball: Pt | null; target: Pt | null } | null;
+  marks: TracerMarks | null;
   signal?: AbortSignal;
   onProgress?: (fraction: number) => void;
 }

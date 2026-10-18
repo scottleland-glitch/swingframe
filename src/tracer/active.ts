@@ -18,7 +18,7 @@ const SHOT_FIELDS: ShotField[] = [
 
 /** True when this swing has tracer numbers or calibration worth drawing or clearing. */
 export function tracerIsSet(shot: ShotData | null | undefined, tracer: TracerCalibration | null | undefined): boolean {
-  if (tracer?.ball || tracer?.target || tracer?.impactTime != null) return true;
+  if (tracer?.ball || tracer?.target || tracer?.ground || tracer?.impactTime != null) return true;
   if (tracer) {
     const base = defaultTracer();
     if (tracer.cameraHeight !== base.cameraHeight || tracer.cameraDistance !== base.cameraDistance || tracer.fov !== base.fov) {

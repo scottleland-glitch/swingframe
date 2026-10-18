@@ -10,9 +10,11 @@ import { detectImpactTime } from '../tracer/detect';
 import { chooseUndo, tracerIsSet } from '../tracer/active';
 import { emptyShot, simulateShot } from '../tracer/flight';
 import { offerRecording, recordTracerVideo } from '../tracer/exportVideo';
+import { parallelAim, straightAheadAim, type ToeLine } from '../tracer/aimSuggest';
+import { detectFeet, frameAtTime } from '../tracer/pose';
 import { defaultTracer, projectFlight } from '../tracer/project';
 import { clipEndTime, holdSpan, nextHold, playClock, tracerPlayhead } from '../tracer/timing';
-import type { Drawing, ShotData, SwingMeta, Tool, TracerCalibration } from '../types';
+import type { Drawing, Pt, ShotData, SwingMeta, Tool, TracerCalibration } from '../types';
 import { useSwing } from '../useSwing';
 import { APP_VERSION } from '../version';
 import { DetailsSheet } from './DetailsSheet';
@@ -102,7 +104,8 @@ export function PlayerView({
   const [helpOpen, setHelpOpen] = useState(false);
   const [pinch, setPinch] = useState(false);
   const [panelPage, setPanelPage] = useState<'draw' | 'edit' | 'trim' | 'overlay' | 'tracer'>('draw');
-  const [tracerMode, setTracerMode] = useState<'ball' | 'target' | null>(null);
+  const [tracerMode, setTracerMode] = useState<'ball' | 'target' | 'ground' | null>(null);
+  const [aimGuides, setAimGuides] = useState<{ toe: [Pt, Pt]; parallel: [Pt, Pt] } | null>(null);
   const [shot, setShot] = useState<ShotData | null>(null);
   const [tracerCal, setTracerCal] = useState<TracerCalibration | null>(null);
   const [impactBusy, setImpactBusy] = useState(false);
@@ -112,7 +115,10 @@ export function PlayerView({
   const [exportProgress, setExportProgress] = useState(0);
   const exportAbort = useRef<AbortController | null>(null);
   const hydratedFor = useRef<string | null>(null);
-  const tracerModeRef = useRef<'ball' | 'target' | null>(null);
+  const tracerModeRef = useRef<'ball' | 'target' | 'ground' | null>(null);
+  const aimEpoch = useRef(0);
+  const feetRef = useRef<ToeLine | null>(null);
+  const viewRef = useRef(swing?.view);
   const tracerPending = useRef<{ shot: ShotData; tracer: TracerCalibration } | null>(null);
   const tracerTimer = useRef<number | null>(null);
   const tracerRun = useRef(false);
@@ -160,6 +166,7 @@ export function PlayerView({
   const calRef = useRef(activeCal);
   shotRef.current = activeShot;
   calRef.current = activeCal;
+  viewRef.current = swing?.view;
 
   const rememberTracer = useCallback(
     (nextShot: ShotData, nextTracer: TracerCalibration, immediate = false) => {
@@ -182,14 +189,93 @@ export function PlayerView({
     [patch],
   );
 
-  const setMode = useCallback((next: 'ball' | 'target' | null) => {
+  const setMode = useCallback((next: 'ball' | 'target' | 'ground' | null) => {
     tracerModeRef.current = next;
     setTracerMode(next);
   }, []);
 
+  const retargetSuggestion = useCallback(() => {
+    const cal = calRef.current;
+    if (viewRef.current !== 'dtl' || cal.locked || cal.aimSuggested !== true) return;
+    const flight = simulateShot(shotRef.current);
+    const camera = {
+      view: 'dtl' as const,
+      height: cal.cameraHeight,
+      distance: cal.cameraDistance,
+      fov: cal.fov,
+    };
+    const straight = straightAheadAim({
+      ball: cal.ball,
+      groundY: cal.ground?.y ?? null,
+      camera,
+      carryMeters: flight ? flight.carryYd * 0.9144 : 140,
+    });
+    const feet = feetRef.current;
+    if (feet && cal.ball) {
+      const next = parallelAim({ ball: cal.ball, feet, depthY: cal.ground?.y ?? straight.y });
+      if (next) {
+        setAimGuides({ toe: next.toe, parallel: next.parallel });
+        rememberTracer(shotRef.current, { ...calRef.current, target: next.point, aimSuggested: true }, true);
+        return;
+      }
+    }
+    setAimGuides(null);
+    rememberTracer(shotRef.current, { ...calRef.current, target: straight, aimSuggested: true }, true);
+  }, [rememberTracer]);
+
+  useEffect(() => {
+    if (!toolsOpen || panelPage !== 'tracer' || !swing || swing.id !== id || swing.view !== 'dtl') return;
+    if (calRef.current.locked) return;
+    if (calRef.current.target && calRef.current.aimSuggested !== true) return;
+    const epoch = aimEpoch.current;
+    if (!calRef.current.target) {
+      const flight = simulateShot(shotRef.current);
+      const point = straightAheadAim({
+        ball: calRef.current.ball,
+        groundY: calRef.current.ground?.y ?? null,
+        camera: {
+          view: 'dtl',
+          height: calRef.current.cameraHeight,
+          distance: calRef.current.cameraDistance,
+          fov: calRef.current.fov,
+        },
+        carryMeters: flight ? flight.carryYd * 0.9144 : 140,
+      });
+      rememberTracer(shotRef.current, { ...calRef.current, target: point, aimSuggested: true }, true);
+    }
+    let cancelled = false;
+    void (async () => {
+      const frames: HTMLCanvasElement[] = [];
+      const live = stageRef.current?.captureFrame() ?? null;
+      if (live) frames.push(live);
+      const impact = calRef.current.impactTime;
+      if (blob) {
+        const at = impact != null ? Math.max(0, impact - 0.4) : (swing?.trimIn ?? 0.15);
+        const address = await frameAtTime(blob, at);
+        if (address) frames.push(address);
+      }
+      if (cancelled || aimEpoch.current !== epoch) return;
+      let best: { feet: ToeLine; confidence: number } | null = null;
+      for (const frame of frames) {
+        const found = await detectFeet(frame, import.meta.env.BASE_URL);
+        if (found && (!best || found.confidence > best.confidence)) best = found;
+      }
+      if (cancelled || aimEpoch.current !== epoch || calRef.current.aimSuggested !== true) return;
+      if (!best) return;
+      feetRef.current = best.feet;
+      retargetSuggestion();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [toolsOpen, panelPage, id, swing?.id, swing?.view, swing?.trimIn, blob, rememberTracer, retargetSuggestion]);
+
   useEffect(() => {
     hydratedFor.current = null;
     setMode(null);
+    feetRef.current = null;
+    aimEpoch.current += 1;
+    setAimGuides(null);
     tracerUndo.current = null;
     tracerUndoStamp.current = 0;
     drawingUndoStamp.current = 0;
@@ -245,6 +331,7 @@ export function PlayerView({
       activeCal.target,
       swing.videoWidth || 9,
       swing.videoHeight || 16,
+      activeCal.ground,
     );
   }, [swing?.view, swing?.videoWidth, swing?.videoHeight, activeShot, activeCal]);
 
@@ -538,6 +625,9 @@ export function PlayerView({
     shotRef.current = blankShot;
     calRef.current = blankTracer;
     setMode(null);
+    feetRef.current = null;
+    aimEpoch.current += 1;
+    setAimGuides(null);
     clearTracerHold();
     setTracerEngaged(false);
     setTracerNote(null);
@@ -748,7 +838,10 @@ export function PlayerView({
       clipEnd: trimOut ?? swing.duration ?? 0,
       videoWidth: swing.videoWidth || 0,
       videoHeight: swing.videoHeight || 0,
-      marks: activeCal.showAim === true ? { ball: activeCal.ball, target: activeCal.target } : null,
+      marks:
+        activeCal.showAim === true
+          ? { ball: activeCal.ball, target: activeCal.target, ground: activeCal.ground ?? null }
+          : null,
       tracerPath: activeCal.showTracer !== false ? tracerPath : null,
       signal: controller.signal,
       onProgress: (fraction) => setExportProgress(fraction),
@@ -800,20 +893,60 @@ export function PlayerView({
             if (mode === 'ball') {
               rememberTracer(shotRef.current, { ...calRef.current, ball: pt }, phase === 'up');
               if (phase === 'up') {
-                setMode('target');
-                return 'target';
+                if (viewRef.current === 'face') {
+                  setMode('target');
+                  return 'target';
+                }
+                retargetSuggestion();
+                setMode(null);
+                return null;
               }
               return 'ball';
             }
             if (mode === 'target') {
-              rememberTracer(shotRef.current, { ...calRef.current, target: pt }, phase === 'up');
+              aimEpoch.current += 1;
+              setAimGuides(null);
+              rememberTracer(shotRef.current, { ...calRef.current, target: pt, aimSuggested: false }, phase === 'up');
               if (phase === 'up') {
                 setMode(null);
                 return null;
               }
               return 'target';
             }
+            if (mode === 'ground') {
+              rememberTracer(shotRef.current, { ...calRef.current, ground: pt }, phase === 'up');
+              if (phase === 'up') {
+                retargetSuggestion();
+                setMode(null);
+                return null;
+              }
+              return 'ground';
+            }
             return null;
+          }}
+          aimSuggestion={
+            swing.view === 'dtl' && activeCal.aimSuggested === true && activeCal.target && !activeCal.locked && tracerMode == null
+              ? { point: activeCal.target, toe: aimGuides?.toe, parallel: aimGuides?.parallel }
+              : null
+          }
+          suggestDrag={
+            swing.view !== 'dtl' || activeCal.aimSuggested !== true || activeCal.locked || tracerMode != null
+              ? 'off'
+              : toolsOpen && panelPage === 'tracer'
+                ? 'video'
+                : 'reticle'
+          }
+          onSuggestAim={(pt, phase) => {
+            if (calRef.current.locked) return;
+            aimEpoch.current += 1;
+            setAimGuides(null);
+            rememberTracer(shotRef.current, { ...calRef.current, target: pt, aimSuggested: false }, phase === 'up');
+          }}
+          onConfirmAim={() => {
+            if (calRef.current.locked || calRef.current.aimSuggested !== true) return;
+            aimEpoch.current += 1;
+            setAimGuides(null);
+            rememberTracer(shotRef.current, { ...calRef.current, aimSuggested: false }, true);
           }}
           tracerPath={
             activeCal.showTracer !== false && (tuningTracer || activeCal.impactTime != null) ? tracerPath : null
@@ -821,7 +954,7 @@ export function PlayerView({
           tracerElapsed={tracerElapsed}
           tracerMarks={
             activeCal.showAim === true || tracerMode != null
-              ? { ball: activeCal.ball, target: activeCal.target }
+              ? { ball: activeCal.ball, target: activeCal.target, ground: activeCal.ground ?? null }
               : null
           }
         />
@@ -995,7 +1128,7 @@ export function PlayerView({
 
       {toolsOpen && (
         <div
-          className="tool-backdrop"
+          className={cx('tool-backdrop', panelPage === 'tracer' && 'is-tracer')}
           data-testid="tool-panel"
           onPointerDown={(event) => {
             if (event.target === event.currentTarget) setToolsOpen(false);
@@ -1181,6 +1314,10 @@ export function PlayerView({
                 onExport={startExport}
                 onCalibrate={(which) => {
                   if (calRef.current.locked) return;
+                  if (which === 'target') {
+                    aimEpoch.current += 1;
+                    setAimGuides(null);
+                  }
                   setMode(which);
                   setToolsOpen(false);
                 }}
@@ -1250,7 +1387,7 @@ export function PlayerView({
           <div className="sheet-body">
             <p className="tip">
               The video stays on this page. Tap the pencil for drawing tools. Place a drawing with two fingers. Undo is on the white bar, and Clear all is in the drawing menu.
-              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon opens the ball flight.
+              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon opens the ball flight. On Down the Line an aim point shows as soon as that menu opens. Check it, or drag it. Landing ground is the far edge of the range, and it sets how high the ball finishes.
               Pause on impact and tap Set impact time on the bar. That button hides while the tracer is locked. Clear tracer removes the line. Undo puts it back.
             </p>
             {swing.notes ? <p className="note-block">{swing.notes}</p> : null}

@@ -1,6 +1,12 @@
 import type { Pt } from '../types';
 import type { TracerPoint } from './project';
 
+export interface TracerMarks {
+  ball: Pt | null;
+  target: Pt | null;
+  ground?: Pt | null;
+}
+
 function slicePath(path: TracerPoint[], elapsed: number | null): { x: number; y: number }[] {
   if (path.length < 2) return [];
   if (elapsed == null) return path;
@@ -54,7 +60,7 @@ export function paintTracer(
   width: number,
   height: number,
   elapsed: number | null,
-  marks: { ball: Pt | null; target: Pt | null } | null,
+  marks: TracerMarks | null,
 ) {
   const points = path ? slicePath(path, elapsed) : [];
   if (points.length >= 2) {
@@ -126,6 +132,20 @@ export function paintTracer(
   if (marks.target) {
     ring(marks.target, '#7ee0ff');
     label(marks.target, 'Aim', '#7ee0ff');
+  }
+  if (marks.ground) {
+    const x = marks.ground.x * width;
+    const y = marks.ground.y * height;
+    ctx.beginPath();
+    ctx.fillStyle = '#b6f5c8';
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 2;
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.stroke();
+    label(marks.ground, 'Ground', '#b6f5c8');
   }
   ctx.restore();
 }

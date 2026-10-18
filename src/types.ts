@@ -55,6 +55,13 @@ export interface TracerCalibration {
   ball: Pt | null;
   /** A point on the aim line, in video coordinates. Direction of the intended line only, not the landing. */
   target: Pt | null;
+  /**
+   * True while Down the Line is still offering that aim point.
+   * A check, a drag, or a tap accepts it. Older swings leave this off.
+   */
+  aimSuggested?: boolean;
+  /** A spot on the ground near where the ball lands, in video coordinates. Sets the landing height, not the sideways finish. */
+  ground?: Pt | null;
   /** Impact, in seconds of the video. Null until it is detected or marked. */
   impactTime: number | null;
   /** Tripod height, meters. */
@@ -63,7 +70,7 @@ export interface TracerCalibration {
   cameraDistance: number;
   /** Vertical field of view, degrees. */
   fov: number;
-  /** When set, ball, aim, impact, numbers, and camera sliders do not change. */
+  /** When set, ball, aim, landing ground, impact, numbers, and camera sliders do not change. */
   locked?: boolean;
   /** Ball, aim point, and aim line. Off unless this swing saved them on. */
   showAim?: boolean;

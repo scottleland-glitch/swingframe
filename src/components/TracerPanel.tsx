@@ -54,7 +54,7 @@ export function TracerPanel({
   onTracer: (tracer: TracerCalibration) => void;
   onDetect: () => void;
   onMarkImpact: () => void;
-  onCalibrate: (which: 'ball' | 'target') => void;
+  onCalibrate: (which: 'ball' | 'target' | 'ground') => void;
   onClear: () => void;
   canClear: boolean;
   exporting: boolean;
@@ -99,7 +99,7 @@ export function TracerPanel({
     <div className="panel-page" data-testid="tracer-panel">
       <h2>Tracer</h2>
       <p className="panel-hint">
-        {view === 'face' ? 'Face On.' : 'Down the Line.'} Add a Foresight screenshot or type the numbers. Check them before you trust the line.
+        {view === 'face' ? 'Face On.' : 'Down the Line. The aim point is on the picture.'} Type the numbers or add a screenshot.
       </p>
       <input
         ref={fileRef}
@@ -268,9 +268,9 @@ export function TracerPanel({
       </div>
       <p className="panel-hint">
         {locked
-          ? 'Locked. The ball, aim, impact, numbers, and camera sliders stay put until you unlock.'
+          ? 'Locked. The ball, aim, landing ground, impact, numbers, and camera sliders stay put until you unlock.'
           : 'Lock freezes the tracer so nothing moves by accident.'}{' '}
-        Show aim point draws the ball, the aim point, and the white aim line. Show tracer is the flight line. The same switches sit on the picture, including in full screen, and they are saved with this swing.
+        Show aim point draws the ball, the aim point, the landing ground, and the white aim line. Show tracer is the flight line. The same switches sit on the picture, including in full screen, and they are saved with this swing.
       </p>
       <fieldset className="tracer-lock" disabled={locked}>
       <div className="panel-actions">
@@ -279,6 +279,9 @@ export function TracerPanel({
         </button>
         <button type="button" className="btn" data-testid="tracer-target" onClick={() => onCalibrate('target')}>
           {tracer.target ? 'Move aim line' : 'Tap aim line'}
+        </button>
+        <button type="button" className="btn" data-testid="tracer-ground" onClick={() => onCalibrate('ground')}>
+          {tracer.ground ? 'Move landing ground' : 'Landing ground'}
         </button>
       </div>
       <label className="tracer-slider">

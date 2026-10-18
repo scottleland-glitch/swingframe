@@ -432,6 +432,30 @@ describe('camera projection', () => {
     expect(degrees).toBeGreaterThan(-4.5);
   });
 
+  it('puts the landing on the tapped ground height without pinning its sideways finish', () => {
+    const straight = driver(0, 0)!;
+    const fade = driver(8)!;
+    const draw = driver(-8)!;
+    const ground = { x: 0.12, y: 0.52 };
+    const tee = { x: 0.5, y: 0.78 };
+    const aim = { x: 0.5, y: 0.3 };
+    const width = 1080;
+    const height = 1920;
+    const tuned = projectFlight(straight.samples, camera, tee, aim, width, height, ground);
+    const untouched = projectFlight(straight.samples, camera, tee, aim, width, height);
+    expect(Math.abs(tuned.at(-1)!.y - ground.y)).toBeLessThan(0.02);
+    expect(untouched.at(-1)!.y).not.toBeCloseTo(ground.y, 2);
+    const fadePath = projectFlight(fade.samples, camera, tee, aim, width, height, ground);
+    const drawPath = projectFlight(draw.samples, camera, tee, aim, width, height, ground);
+    expect(Math.abs(fadePath.at(-1)!.y - ground.y)).toBeLessThan(0.02);
+    expect(Math.abs(drawPath.at(-1)!.y - ground.y)).toBeLessThan(0.02);
+    expect(Math.abs(fadePath.at(-1)!.x - drawPath.at(-1)!.x)).toBeGreaterThan(0.015);
+    expect(Math.abs(fadePath.at(-1)!.x - ground.x)).toBeGreaterThan(0.05);
+    const straightRays = imageRays(tuned, tee, aim, width, height);
+    expect(Math.abs(straightRays.at(-1)!.across)).toBeLessThan(2);
+    expect(projectFlight(straight.samples, camera, tee, aim, width, height, null)).toEqual(untouched);
+  });
+
   it('shrinks the arc in the frame when the field of view opens', () => {
     const span = (fov: number) => {
       const path = projectFlight(samples, { ...camera, fov }, ball, target, width, height);
