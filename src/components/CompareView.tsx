@@ -24,7 +24,7 @@ export function CompareView({ a, b, onBack }: { a: string; b: string; onBack: ()
   const [rateB, setRateB] = useState(1);
   const [active, setActive] = useState<'a' | 'b'>('a');
   const [tool, setTool] = useState<Tool>('select');
-  const [color, setColor] = useState('#ffe14a');
+  const [color, setColor] = useState('#ffffff');
   const [selA, setSelA] = useState<string | null>(null);
   const [selB, setSelB] = useState<string | null>(null);
   const [draftA, setDraftA] = useState(false);

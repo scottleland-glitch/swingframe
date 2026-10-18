@@ -1,3 +1,5 @@
+import { lockInlinePlayback } from './inlineVideo';
+
 export interface ProbeResult {
   duration: number;
   width: number;
@@ -88,11 +90,9 @@ export function looksLikeVideo(file: File): boolean {
 export async function probeVideo(file: File): Promise<ProbeResult> {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
-  video.preload = 'auto';
+  video.preload = 'metadata';
   video.muted = true;
-  video.playsInline = true;
-  video.setAttribute('playsinline', 'true');
-  video.setAttribute('webkit-playsinline', 'true');
+  lockInlinePlayback(video);
   video.style.position = 'fixed';
   video.style.left = '-4000px';
   video.style.width = '8px';

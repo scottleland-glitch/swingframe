@@ -63,6 +63,22 @@ export function viewLabel(view: ViewAngle, short = false): string {
   return 'Face On';
 }
 
+/** Compact clock for the player pill, like 0.00 or 1:02.40. */
+export function formatScrub(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+  if (seconds < 60) return seconds.toFixed(2);
+  const m = Math.floor(seconds / 60);
+  const s = seconds - m * 60;
+  return `${m}:${s.toFixed(2).padStart(5, '0')}`;
+}
+
+export function formatRate(speed: number): string {
+  if (speed === 0.5) return '0.5x';
+  if (speed === 0.25) return '0.25x';
+  if (speed === 0.1) return '0.1x';
+  return '1x';
+}
+
 export function speedLabel(speed: number): string {
   if (speed === 1) return '1×';
   if (speed === 0.5) return '½';

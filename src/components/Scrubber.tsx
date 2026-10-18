@@ -5,11 +5,13 @@ export function Scrubber({
   max,
   onScrub,
   testId = 'scrubber',
+  className,
 }: {
   value: number;
   max: number;
   onScrub: (time: number) => void;
   testId?: string;
+  className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -30,7 +32,7 @@ export function Scrubber({
   return (
     <div
       ref={ref}
-      className="scrubber"
+      className={className ? `scrubber ${className}` : 'scrubber'}
       data-testid={testId}
       role="slider"
       aria-label="Scrub video"

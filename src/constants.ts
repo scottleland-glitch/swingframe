@@ -1,10 +1,10 @@
 export const DRAW_COLORS = [
-  '#ffe14a',
   '#ffffff',
-  '#ff4b3e',
-  '#49f2e6',
-  '#b6f25c',
-  '#ff9d42',
+  '#ff3b30',
+  '#0a84ff',
+  '#ffd60a',
+  '#30d158',
+  '#ff9f0a',
 ] as const;
 
 export const SPEEDS = [1, 0.5, 0.25, 0.1] as const;

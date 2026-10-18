@@ -3,6 +3,7 @@ import { CLUBS, DEFAULT_FPS } from '../constants';
 import { isQuotaError, quotaMessage, saveSwing } from '../db';
 import { errorMessage, formatBytes, todayISO, uid } from '../format';
 import type { SwingMeta, ViewAngle } from '../types';
+import { lockInlinePlayback } from '../inlineVideo';
 import { looksLikeVideo, probeVideo, type ProbeResult } from '../videoProbe';
 import { Icon } from './Icons';
 import { ViewPicker } from './ViewPicker';
@@ -150,7 +151,18 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
             }}
           >
             {previewUrl && (
-              <video className="preview" src={previewUrl} playsInline muted controls preload="metadata" />
+              <video
+                className="preview inline-video"
+                playsInline
+                muted
+                preload="metadata"
+                controls={false}
+                ref={(node) => {
+                  if (!node) return;
+                  lockInlinePlayback(node);
+                  if (!node.src) node.src = previewUrl;
+                }}
+              />
             )}
             <p className="file-line">
               {file.name || 'Video'} · {formatBytes(file.size)}

@@ -28,7 +28,14 @@ export type IconName =
   | 'close'
   | 'plus'
   | 'dtl'
-  | 'face';
+  | 'face'
+  | 'wrench'
+  | 'flip'
+  | 'trim'
+  | 'pinch'
+  | 'overlay'
+  | 'erase'
+  | 'help';
 
 export function Icon({ name }: { name: IconName }) {
   return (
@@ -201,6 +208,55 @@ function paths(name: IconName) {
         <>
           <circle cx="12" cy="6.5" r="2" />
           <path d="M12 9v6M8 12h8M9 20l3-5 3 5" />
+        </>
+      );
+    case 'wrench':
+      return (
+        <path d="M14.5 6.5a3.5 3.5 0 0 0-4.8 4.1L4 16.3 7.7 20l5.7-5.7a3.5 3.5 0 0 0 4.1-4.8L15 12l-3-3 2.5-2.5Z" />
+      );
+    case 'flip':
+      return (
+        <>
+          <path d="M12 4v16" />
+          <path d="M7 8 4 12l3 4" />
+          <path d="M17 8l3 4-3 4" />
+        </>
+      );
+    case 'trim':
+      return (
+        <>
+          <path d="M4 8v8M20 8v8" />
+          <path d="M8 12h8" />
+          <path d="M6 8h3M15 8h3M6 16h3M15 16h3" />
+        </>
+      );
+    case 'pinch':
+      return (
+        <>
+          <path d="M8 8 5 5M16 8l3-3M8 16l-3 3M16 16l3 3" />
+          <circle cx="12" cy="12" r="2" />
+        </>
+      );
+    case 'overlay':
+      return (
+        <>
+          <rect x="4" y="6" width="10" height="12" rx="1.4" />
+          <rect x="10" y="4" width="10" height="12" rx="1.4" />
+        </>
+      );
+    case 'erase':
+      return (
+        <>
+          <path d="M4 16.5 12 8l5 5-6.5 6.5H4v-3Z" />
+          <path d="M14 18h6" />
+        </>
+      );
+    case 'help':
+      return (
+        <>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M9.5 9.5a2.5 2.5 0 1 1 3.2 2.4c-.7.3-1.2.8-1.2 1.6" />
+          <path d="M12 17h.01" />
         </>
       );
     default: {

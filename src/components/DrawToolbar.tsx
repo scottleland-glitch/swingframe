@@ -12,6 +12,7 @@ const TOOLS: { id: Tool; label: string; icon: IconName }[] = [
   { id: 'box', label: 'Box', icon: 'box' },
   { id: 'hline', label: 'Level', icon: 'hline' },
   { id: 'vline', label: 'Plumb', icon: 'vline' },
+  { id: 'erase', label: 'Erase', icon: 'erase' },
 ];
 
 export function DrawToolbar({

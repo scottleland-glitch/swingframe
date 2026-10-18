@@ -1,7 +1,8 @@
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { ZOOM_MAX, ZOOM_MIN } from '../constants';
 import { paint } from '../draw';
 import { uid } from '../format';
+import { exitNativeFullscreen, lockInlinePlayback } from '../inlineVideo';
 import {
   applyHandle,
   clamp,
@@ -51,6 +52,11 @@ export const VideoStage = forwardRef<
     rate: number;
     loop: boolean;
     muted: boolean;
+    mirrored?: boolean;
+    panMode?: boolean;
+    trimIn?: number | null;
+    trimOut?: number | null;
+    overlayBlob?: Blob | null;
     onSelect: (id: string | null) => void;
     onCommit: (next: Drawing[]) => void;
     onDraftChange?: (hasDraft: boolean) => void;
@@ -67,6 +73,11 @@ export const VideoStage = forwardRef<
     rate,
     loop,
     muted,
+    mirrored = false,
+    panMode = false,
+    trimIn = null,
+    trimOut = null,
+    overlayBlob = null,
     onSelect,
     onCommit,
     onDraftChange,
@@ -75,6 +86,7 @@ export const VideoStage = forwardRef<
 
   const stageRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const overlayRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [videoSize, setVideoSize] = useState({ w: 0, h: 0 });
   const [layout, setLayout] = useState({ w: 0, h: 0 });
@@ -101,6 +113,10 @@ export const VideoStage = forwardRef<
   const fpsRef = useRef(fps);
   const rateRef = useRef(rate);
   const loopRef = useRef(loop);
+  const mirroredRef = useRef(mirrored);
+  const panModeRef = useRef(panMode);
+  const trimInRef = useRef<number | null>(trimIn);
+  const trimOutRef = useRef<number | null>(trimOut);
   const onSelectRef = useRef(onSelect);
   const onCommitRef = useRef(onCommit);
   const onDraftChangeRef = useRef(onDraftChange);
@@ -110,12 +126,21 @@ export const VideoStage = forwardRef<
   const wakeRef = useRef<WakeLockSentinel | null>(null);
   const apiRef = useRef<VideoEngine | null>(null);
 
+  const attachVideo = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    if (node) lockInlinePlayback(node);
+  }, []);
+
   drawingsRef.current = drawings;
   toolRef.current = tool;
   colorRef.current = color;
   selectedRef.current = selectedId;
   fpsRef.current = fps;
   loopRef.current = loop;
+  mirroredRef.current = mirrored;
+  panModeRef.current = panMode;
+  trimInRef.current = trimIn;
+  trimOutRef.current = trimOut;
   onSelectRef.current = onSelect;
   onCommitRef.current = onCommit;
   onDraftChangeRef.current = onDraftChange;
@@ -198,6 +223,18 @@ export const VideoStage = forwardRef<
       const node = videoRef.current;
       if (!node) return;
       const dur = Number.isFinite(node.duration) ? node.duration : 0;
+      const end = trimOutRef.current;
+      const start = trimInRef.current ?? 0;
+      if (end != null && node.currentTime >= end - stepSize * 0.25) {
+        if (loopRef.current) {
+          node.currentTime = start;
+          return;
+        }
+        node.currentTime = Math.max(start, end - 0.001);
+        stopManual();
+        void unlockWake();
+        return;
+      }
       if (node.currentTime >= dur - stepSize * 0.25) {
         if (loopRef.current) {
           node.currentTime = 0;
@@ -240,12 +277,41 @@ export const VideoStage = forwardRef<
     void unlockWake();
   }
 
+  function playingOutsideTrim(time: number): boolean {
+    const start = trimInRef.current ?? 0;
+    const end = trimOutRef.current;
+    if (time < start - 0.02) return true;
+    if (end != null && end > start && time >= end - 0.02) return true;
+    return false;
+  }
+
+  function enforceTrim(video: HTMLVideoElement) {
+    const playing = manualRef.current || !video.paused;
+    if (!playing || !playingOutsideTrim(video.currentTime)) return;
+    const start = trimInRef.current ?? 0;
+    const end = trimOutRef.current;
+    if (end != null && end > start && video.currentTime >= end - 0.02) {
+      if (loopRef.current) {
+        video.currentTime = start;
+        return;
+      }
+      video.currentTime = Math.max(start, end - 0.001);
+      pause();
+      return;
+    }
+    if (video.currentTime < start) video.currentTime = start;
+  }
+
   async function play() {
     const video = videoRef.current;
     if (!video) return;
+    lockInlinePlayback(video);
     stopManual();
     const nextRate = rateRef.current;
     video.playbackRate = nextRate;
+    if (playingOutsideTrim(video.currentTime)) {
+      video.currentTime = trimInRef.current ?? 0;
+    }
     try {
       await video.play();
     } catch {
@@ -308,8 +374,11 @@ export const VideoStage = forwardRef<
   function normFromClient(clientX: number, clientY: number): Pt | null {
     const rect = canvasRect();
     if (!rect) return null;
+    // The picture and the canvas share one CSS flip, so a tap on the
+    // visual left is the right side of the unflipped video.
+    const visualX = (clientX - rect.left) / rect.width;
     return {
-      x: (clientX - rect.left) / rect.width,
+      x: mirroredRef.current ? 1 - visualX : visualX,
       y: (clientY - rect.top) / rect.height,
     };
   }
@@ -371,9 +440,31 @@ export const VideoStage = forwardRef<
   function beginGesture(event: { clientX: number; clientY: number }) {
     const p = normFromClient(event.clientX, event.clientY);
     if (!p) return;
+    if (panModeRef.current) {
+      dragRef.current = {
+        kind: 'pan',
+        x: event.clientX,
+        y: event.clientY,
+        ox: zoomRef.current.x,
+        oy: zoomRef.current.y,
+      };
+      return;
+    }
     const active = toolRef.current;
     const rect = canvasRect();
     const drawingHere = rect != null && onVideo(event.clientX, event.clientY, p);
+
+    if (active === 'erase') {
+      if (drawingHere && rect) {
+        pause();
+        const hit = hitTest(drawingsRef.current, p, rect.width, rect.height, null);
+        if (hit) {
+          onCommitRef.current(drawingsRef.current.filter((drawing) => drawing.id !== hit.id));
+          onSelectRef.current(null);
+        }
+      }
+      return;
+    }
 
     if (active === 'select' || !drawingHere) {
       if (active === 'select' && drawingHere && rect) {
@@ -426,11 +517,13 @@ export const VideoStage = forwardRef<
     }
 
     if (active === 'angle') {
+      pause();
       dragRef.current = { kind: 'angle', x: event.clientX, y: event.clientY };
       return;
     }
 
     onSelectRef.current(null);
+    pause();
     const ink = colorRef.current;
     dragRef.current = { kind: 'draw', anchor: p };
     if (active === 'line') publishDraft({ id: 'draft', type: 'line', color: ink, a: p, b: p });
@@ -505,6 +598,7 @@ export const VideoStage = forwardRef<
     if (!shape || !rect) return;
     const commit = (drawing: Drawing) => {
       onCommitRef.current([...drawingsRef.current, drawing]);
+      onSelectRef.current(drawing.id);
     };
     if (shape.type === 'line') {
       if (pxDist(shape.a, shape.b, rect.width, rect.height) < 8) return;
@@ -577,9 +671,18 @@ export const VideoStage = forwardRef<
       if (cancelled) return;
       setMediaError('This browser could not play that video. iPhone Safari plays Camera Roll clips, including slo-mo.');
     };
+    const onNativeFullscreen = (event: Event) => {
+      event.preventDefault();
+      exitNativeFullscreen(video);
+    };
+    const onTime = () => enforceTrim(video);
     video.addEventListener('loadedmetadata', onMeta);
     video.addEventListener('resize', onMeta);
     video.addEventListener('error', onErr);
+    video.addEventListener('webkitbeginfullscreen', onNativeFullscreen);
+    video.addEventListener('timeupdate', onTime);
+    // Attributes first. iOS latches the system player if src is set before them.
+    lockInlinePlayback(video);
     video.src = url;
     video.playbackRate = rateRef.current;
     return () => {
@@ -588,6 +691,8 @@ export const VideoStage = forwardRef<
       video.removeEventListener('loadedmetadata', onMeta);
       video.removeEventListener('resize', onMeta);
       video.removeEventListener('error', onErr);
+      video.removeEventListener('webkitbeginfullscreen', onNativeFullscreen);
+      video.removeEventListener('timeupdate', onTime);
       video.pause();
       video.removeAttribute('src');
       video.load();
@@ -596,6 +701,49 @@ export const VideoStage = forwardRef<
     // rate is applied by the rate effect; the blob effect only needs the initial value.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blob]);
+
+  useEffect(() => {
+    const over = overlayRef.current;
+    const main = videoRef.current;
+    if (!over || !main || !overlayBlob) return;
+    const url = URL.createObjectURL(overlayBlob);
+    lockInlinePlayback(over);
+    over.src = url;
+    over.muted = true;
+    const sync = () => {
+      const lead = videoRef.current;
+      const follow = overlayRef.current;
+      if (!lead || !follow) return;
+      const leadDur = lead.duration;
+      const followDur = follow.duration;
+      if (leadDur > 0 && followDur > 0) {
+        const target = (lead.currentTime / leadDur) * followDur;
+        if (Math.abs(follow.currentTime - target) > 0.08) follow.currentTime = target;
+      }
+      if (lead.paused) follow.pause();
+      else if (follow.paused) void follow.play().catch(() => undefined);
+    };
+    const onNativeFullscreen = (event: Event) => {
+      event.preventDefault();
+      exitNativeFullscreen(over);
+    };
+    over.addEventListener('webkitbeginfullscreen', onNativeFullscreen);
+    main.addEventListener('timeupdate', sync);
+    main.addEventListener('seeked', sync);
+    main.addEventListener('play', sync);
+    main.addEventListener('pause', sync);
+    return () => {
+      main.removeEventListener('timeupdate', sync);
+      main.removeEventListener('seeked', sync);
+      main.removeEventListener('play', sync);
+      main.removeEventListener('pause', sync);
+      over.removeEventListener('webkitbeginfullscreen', onNativeFullscreen);
+      over.pause();
+      over.removeAttribute('src');
+      over.load();
+      URL.revokeObjectURL(url);
+    };
+  }, [overlayBlob]);
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.muted = muted;
@@ -701,6 +849,7 @@ export const VideoStage = forwardRef<
     <div
       ref={stageRef}
       className="stage"
+      data-testid="stage"
       onContextMenu={(event) => event.preventDefault()}
       onPointerDown={(event) => {
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -752,22 +901,39 @@ export const VideoStage = forwardRef<
     >
       <div
         className="fit"
+        data-mirrored={mirrored ? 'true' : 'false'}
         style={{
           width: layout.w,
           height: layout.h,
-          transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`,
+          transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${mirrored ? -zoom.scale : zoom.scale}, ${zoom.scale})`,
         }}
       >
         <video
-          ref={videoRef}
+          ref={attachVideo}
+          className="inline-video"
           playsInline
           muted={muted}
           loop={loop}
-          preload="auto"
+          preload="metadata"
+          controls={false}
           disablePictureInPicture
-          controlsList="nodownload nofullscreen noremoteplayback"
+          disableRemotePlayback
           aria-label="Swing video"
+          onClick={(event) => event.preventDefault()}
         />
+        {overlayBlob && (
+          <video
+            ref={overlayRef}
+            className="inline-video overlay-video"
+            playsInline
+            muted
+            preload="metadata"
+            controls={false}
+            disablePictureInPicture
+            disableRemotePlayback
+            aria-hidden="true"
+          />
+        )}
         <canvas ref={canvasRef} />
       </div>
       {tool === 'angle' && <div className="gesture-chip">{angleHint}</div>}

@@ -8,8 +8,8 @@ It is a static web app, built to be added to an iPhone Home Screen and used one-
 
 - **Capture.** Record with the phone camera, or choose an existing video (including slo-mo from the Camera app). Each swing is tagged Down the Line or Face On, with an optional date, club, and notes.
 - **Library.** A list on this phone, filtered by All, Down the Line, or Face On. Stored in IndexedDB, including the video file.
-- **Playback.** Play and pause, a scrub bar, step forward or back one frame, and speeds of 1×, ½, ¼, and 0.1×. The frame step size is 30, 60, 120, or 240 fps, saved with the swing. Playback is inline and starts muted so iPhone Safari will actually play it. Sound and loop are toggles.
-- **Drawing.** Straight lines (the segment you drag is extended across the frame, for a shaft or swing plane), freehand, a three-tap angle tool that shows degrees, circles, boxes, and horizontal or vertical reference lines. Colors, move, reshape, delete, undo, and clear. Pinch to zoom, or use the + / − buttons. Drawings are stored in the video's own coordinate space, so they stay aligned when you zoom or rotate the phone, and they come back when you reopen the swing.
+- **Playback.** The video stays inside the page. It does not open the iPhone's full-screen player, so the drawing tools stay on screen. A white bar at the bottom has the speed, frame step, play, and a wrench. Drag the time at the top right, or the thin bar, to scrub. Speeds are 1×, ½, ¼, and 0.1×. The frame step size is 30, 60, 120, or 240 fps, saved with the swing. Sound, loop, details, and delete are under the ? button.
+- **Drawing.** Open the wrench. Straight lines (the segment you drag is extended across the frame, for a shaft or swing plane), freehand, a three-tap angle tool that shows degrees, circles, boxes, horizontal or vertical reference lines, and erase. Colors, move, reshape, undo, and clear. Flip mirrors the picture. Pinch zooms, and the ink stays on the video. Trim sets a start and end. Overlay lays another swing on top, half transparent. Drawings are stored in the video's own coordinate space, so they stay aligned when you zoom, flip, or rotate the phone, and they come back when you reopen the swing.
 - **Compare.** Pick two swings. In portrait they stack; turn the phone sideways (or use a wide window) and they sit side by side. Each clip scrubs on its own. Sync matches progress through the swing, so the second clip follows the one you play or scrub. Synced playback plays one video and seeks the other, which is the reliable way to do this on an iPhone.
 - **Installable.** Web app manifest, home screen icons, standalone display, and a service worker so the app shell loads offline after the first visit. Saved videos are already on the device and do not need the network.
 
@@ -64,12 +64,12 @@ After it has loaded once from the icon, the screens open offline. Videos you alr
 
 1. For a true slow-motion swing, record **Slo-Mo** in the iPhone Camera app (120 or 240), then in Swingframe choose **Choose from library**. The Record button opens the camera, which is the right path for a normal clip.
 2. Tag Down the Line or Face On before saving.
-3. Open the swing. Set **Step** to 120 or 240 if one tap jumps several frames, or lower it if a tap barely moves.
-4. Drag a line from the ball through the hands, or tap three points for spine angle or knee flex.
-5. Pinch, or tap +, to zoom in. The ink stays on the frame.
-6. To compare a Down the Line and a Face On of the same swing, save both, tap Compare, and turn Sync on. Scrub either clip to the same point in the motion.
+3. Open the swing. The picture stays in the page. Tap **?** and set **Step** to 120 or 240 if one tap jumps several frames, or lower it if a tap barely moves.
+4. Tap the wrench, choose Line, and drag from the ball through the hands. Angle is three taps. The ink stays put if you flip or pinch-zoom.
+5. Drag the time at the top, or the thin bar, to scrub. The speed pill cycles 1x, 0.5x, 0.25x, and 0.1x.
+6. To compare a Down the Line and a Face On of the same swing, save both, open the wrench, tap Compare, and turn Sync on. Overlay puts the second swing on top of the first instead.
 
-Sound is off until you tap the speaker. Hearing impact is useful; the speaker is next to the loop button.
+Sound is off until you turn it on under **?**. Hearing impact is useful.
 
 ## Good to know
 

@@ -10,7 +10,8 @@ export type Tool =
   | 'circle'
   | 'box'
   | 'hline'
-  | 'vline';
+  | 'vline'
+  | 'erase';
 
 export type Drawing =
   | { id: string; type: 'line'; color: string; a: Pt; b: Pt }
@@ -34,6 +35,11 @@ export interface SwingMeta {
   videoHeight: number;
   /** Assumed frames per second, used only for frame-step size. */
   fps: number;
+  /** Playback window, in seconds. Missing means the whole clip. */
+  trimIn?: number | null;
+  trimOut?: number | null;
+  /** Mirror the picture. Drawings stay in the video's own coordinates. */
+  mirrored?: boolean;
   mimeType: string;
   fileName: string;
   byteSize: number;
