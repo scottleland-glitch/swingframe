@@ -9,6 +9,7 @@ import { withColor } from '../geometry';
 import { detectImpactTime } from '../tracer/detect';
 import { emptyShot, simulateShot } from '../tracer/flight';
 import { defaultTracer, projectFlight } from '../tracer/project';
+import { tracerPlayhead } from '../tracer/timing';
 import type { ShotData, SwingMeta, Tool, TracerCalibration } from '../types';
 import { useSwing } from '../useSwing';
 import { APP_VERSION } from '../version';
@@ -110,6 +111,14 @@ export function PlayerView({
   const tracerModeRef = useRef<'ball' | 'target' | null>(null);
   const tracerPending = useRef<{ shot: ShotData; tracer: TracerCalibration } | null>(null);
   const tracerTimer = useRef<number | null>(null);
+  const tracerRun = useRef(false);
+  const holdRef = useRef(0);
+  const flightRef = useRef(0);
+  const rateRef = useRef(rate);
+  const loopRef = useRef(loop);
+  const [tracerHold, setTracerHold] = useState(0);
+  rateRef.current = rate;
+  loopRef.current = loop;
   const [others, setOthers] = useState<SwingMeta[]>([]);
   const [overlayId, setOverlayId] = useState<string | null>(null);
   const [overlayBlob, setOverlayBlob] = useState<Blob | null>(null);
@@ -189,6 +198,57 @@ export function PlayerView({
     );
   }, [swing?.view, swing?.videoWidth, swing?.videoHeight, activeShot, activeCal]);
 
+  const tracerFlight = tracerPath?.length ? tracerPath[tracerPath.length - 1].t : 0;
+  flightRef.current = tracerFlight;
+  const tuningTracer = tracerMode != null || (toolsOpen && panelPage === 'tracer');
+  const tracerElapsed = tuningTracer ? null : tracerPlayhead(clock.time, activeCal.impactTime, tracerFlight, tracerHold);
+
+  const clearTracerHold = useCallback(() => {
+    tracerRun.current = false;
+    if (holdRef.current !== 0) {
+      holdRef.current = 0;
+      setTracerHold(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    let frame = 0;
+    let last = 0;
+    const tick = (now: number) => {
+      frame = requestAnimationFrame(tick);
+      const engine = stageRef.current;
+      if (loopRef.current && holdRef.current !== 0) {
+        holdRef.current = 0;
+        setTracerHold(0);
+      }
+      if (!engine || !tracerRun.current || loopRef.current) {
+        last = now;
+        return;
+      }
+      const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
+      last = now;
+      if (!engine.getEnded()) {
+        if (holdRef.current !== 0) {
+          holdRef.current = 0;
+          setTracerHold(0);
+        }
+        return;
+      }
+      const impact = calRef.current.impactTime;
+      const flight = flightRef.current;
+      if (impact == null || !(flight > 0)) return;
+      const remaining = flight - (engine.getTime() - impact);
+      if (remaining <= 0) return;
+      const next = remaining <= 0.02 ? remaining : Math.min(remaining, holdRef.current + dt * rateRef.current);
+      if (next > holdRef.current + 0.0001) {
+        holdRef.current = next;
+        setTracerHold(next);
+      }
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
   useEffect(() => {
     let cancel = false;
     void listSwings()
@@ -226,27 +286,32 @@ export function PlayerView({
     const engine = stageRef.current;
     if (!engine) return;
     if (engine.getPaused()) {
+      tracerRun.current = true;
       try {
         await engine.play();
         setPlayError(null);
       } catch (err) {
+        tracerRun.current = false;
         setPlayError(err instanceof Error ? err.message : 'Could not play.');
       }
     } else {
+      tracerRun.current = false;
       engine.pause();
     }
   }, []);
 
   const step = useCallback((dir: number) => {
+    clearTracerHold();
     stageRef.current?.step(dir);
-  }, []);
+  }, [clearTracerHold]);
 
   const scrub = useCallback((time: number) => {
     const engine = stageRef.current;
     if (!engine) return;
+    clearTracerHold();
     engine.pause();
     engine.seek(time);
-  }, []);
+  }, [clearTracerHold]);
 
   const undoAll = useCallback(() => {
     if (stageRef.current?.undoDraft()) return;
@@ -311,6 +376,7 @@ export function PlayerView({
   function onTimePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
     const engine = stageRef.current;
     if (!engine) return;
+    clearTracerHold();
     engine.pause();
     event.currentTarget.setPointerCapture(event.pointerId);
     const origin = { x: event.clientX, time: engine.getTime(), duration: engine.getDuration() };
@@ -455,12 +521,8 @@ export function PlayerView({
             }
             return null;
           }}
-          tracerPath={tracerPath}
-          tracerElapsed={
-            tracerMode != null || (toolsOpen && panelPage === 'tracer') || activeCal.impactTime == null
-              ? null
-              : Math.max(0, clock.time - (activeCal.impactTime ?? 0))
-          }
+          tracerPath={tuningTracer || activeCal.impactTime != null ? tracerPath : null}
+          tracerElapsed={tracerElapsed}
           tracerMarks={
             tracerMode != null || (toolsOpen && panelPage === 'tracer')
               ? { ball: activeCal.ball, target: activeCal.target }
@@ -724,14 +786,15 @@ export function PlayerView({
                   void detectImpactTime(blob, calRef.current.ball)
                     .then((time) => {
                       if (time == null) {
-                        setTracerNote('Could not find the hit. Step to that frame and tap Mark impact.');
+                        setTracerNote('Could not find the hit. Pause on that frame and tap Set impact time.');
                         return;
                       }
+                      clearTracerHold();
                       rememberTracer(shotRef.current, { ...calRef.current, impactTime: time }, true);
                       stageRef.current?.pause();
                       stageRef.current?.seek(time);
                     })
-                    .catch(() => setTracerNote('Could not find the hit. Step to that frame and tap Mark impact.'))
+                    .catch(() => setTracerNote('Could not find the hit. Pause on that frame and tap Set impact time.'))
                     .finally(() => setImpactBusy(false));
                 }}
                 onMarkImpact={() => {
@@ -810,7 +873,7 @@ export function PlayerView({
             <p className="tip">
               The video stays on this page. Place a drawing with two fingers. Undo and Clear all are on the white bar.
               Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. Tracer, in the wrench,
-              draws the ball flight from a Foresight screenshot or from numbers you type.
+              draws the ball flight from a Foresight screenshot or from numbers you type. Pause on impact and tap Set impact time.
             </p>
             {swing.notes ? <p className="note-block">{swing.notes}</p> : null}
             <div className="fps-row" role="group" aria-label="Frame step size">

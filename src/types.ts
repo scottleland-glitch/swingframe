@@ -7,6 +7,9 @@ export type ShotField =
   | 'spin'
   | 'spinAxis'
   | 'sideSpin'
+  | 'clubPath'
+  | 'faceToTarget'
+  | 'faceToPath'
   | 'carry'
   | 'apex'
   | 'curve';
@@ -16,26 +19,33 @@ export type ShotSource = 'screen' | 'typed' | 'model';
 
 /**
  * Launch-monitor numbers in US units.
- * HLA, spin axis, side spin, and curve are positive to the right (a fade for a right-handed golfer).
+ * Direction fields are negative to the left and positive to the right.
+ * Launch direction (HLA) is the ball's start line. It is not club path.
  * Spin axis 0 is pure backspin.
  */
 export interface ShotData {
   ballSpeed: number | null;
   /** Vertical launch angle, degrees. */
   vla: number | null;
-  /** Horizontal launch angle, degrees, positive right. */
+  /** Horizontal launch angle, degrees. Negative left, positive right. */
   hla: number | null;
   /** Total spin, rpm. */
   spin: number | null;
-  /** Spin axis, degrees, positive fade. */
+  /** Spin axis, degrees. Negative draw, positive fade. */
   spinAxis: number | null;
-  /** Side spin, rpm, positive fade. */
+  /** Side spin, rpm. Negative left, positive right. */
   sideSpin: number | null;
+  /** Club path, degrees. Negative left, positive right. */
+  clubPath: number | null;
+  /** Face angle relative to the target, degrees. Negative left, positive right. */
+  faceToTarget: number | null;
+  /** Face angle relative to the path, degrees. Negative closed, positive open. */
+  faceToPath: number | null;
   /** Carry, yards. */
   carry: number | null;
   /** Apex, feet. */
   apex: number | null;
-  /** Lateral curve at landing, yards, positive right. */
+  /** Lateral curve at landing, yards. Negative left, positive right. */
   curve: number | null;
   sources: Partial<Record<ShotField, ShotSource>>;
 }

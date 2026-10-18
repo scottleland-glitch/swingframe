@@ -5,6 +5,9 @@ const LABELS: { field: ShotField | 'backSpin'; re: RegExp }[] = [
   { field: 'ballSpeed', re: /ball\s*spe{1,2}d/i },
   { field: 'vla', re: /\bvla\b|launch\s*ang(?:le)?|vertical\s*launch/i },
   { field: 'hla', re: /\bhla\b|launch\s*dir(?:ection)?|azimuth|side\s*ang(?:le)?|horizontal\s*launch/i },
+  { field: 'faceToPath', re: /face\s*to\s*path/i },
+  { field: 'faceToTarget', re: /face\s*to\s*target|face\s*angle|face\s*to\s*tgt/i },
+  { field: 'clubPath', re: /club\s*path/i },
   { field: 'spinAxis', re: /spin\s*axis|\baxis\b/i },
   { field: 'sideSpin', re: /side\s*spin/i },
   { field: 'backSpin', re: /back\s*spin/i },
@@ -14,7 +17,15 @@ const LABELS: { field: ShotField | 'backSpin'; re: RegExp }[] = [
   { field: 'curve', re: /\bcurve\b|\bside\b/i },
 ];
 
-const DIRECTIONAL = new Set<ShotField | 'backSpin'>(['hla', 'spinAxis', 'sideSpin', 'curve']);
+const DIRECTIONAL = new Set<ShotField | 'backSpin'>([
+  'hla',
+  'spinAxis',
+  'sideSpin',
+  'curve',
+  'clubPath',
+  'faceToTarget',
+  'faceToPath',
+]);
 
 function normalizeOcr(text: string): string {
   return text
@@ -62,6 +73,7 @@ function plausible(field: ShotField | 'backSpin', value: number): number | null 
     return angle >= -15 && angle <= 70 ? angle : null;
   }
   if (field === 'hla' || field === 'spinAxis') return abs <= 60 ? value : null;
+  if (field === 'clubPath' || field === 'faceToTarget' || field === 'faceToPath') return abs <= 45 ? value : null;
   if (field === 'spin' || field === 'backSpin') return abs >= 50 && abs <= 16000 ? abs : null;
   if (field === 'sideSpin') return abs <= 12000 ? value : null;
   if (field === 'carry') return abs >= 5 && abs <= 450 ? abs : null;
@@ -77,6 +89,8 @@ function readValue(field: ShotField | 'backSpin', raw: number): number | null {
 
 /**
  * Pull Foresight-style labels out of OCR text.
+ * Club path, face to target, and face to path are read when they are on the screen.
+ * Launch direction stays its own field. L is left, R is right.
  * Does not invent carry, apex, or curve. Club speed, smash, and attack angle are ignored.
  */
 export function parseForesightText(text: string): ShotData {

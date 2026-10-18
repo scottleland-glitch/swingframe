@@ -1,19 +1,23 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { formatTime } from '../format';
 import type { ShotData, ShotField, TracerCalibration, ViewAngle } from '../types';
-import { editShot, mergeScreen } from '../tracer/flight';
+import { editShot, mergeScreen, simulateShot } from '../tracer/flight';
 import { readShotScreenshot } from '../tracer/ocr';
+import { withSide } from '../tracer/sign';
 
-const FIELDS: { key: ShotField; label: string; unit: string; step: string }[] = [
+const FIELDS: { key: ShotField; label: string; unit: string; step: string; signed?: boolean }[] = [
   { key: 'ballSpeed', label: 'Ball speed', unit: 'mph', step: '0.1' },
   { key: 'vla', label: 'Launch angle', unit: 'deg', step: '0.1' },
-  { key: 'hla', label: 'Direction', unit: '+ right', step: '0.1' },
+  { key: 'hla', label: 'Launch direction', unit: 'L / R', step: '0.1', signed: true },
   { key: 'spin', label: 'Spin', unit: 'rpm', step: '1' },
-  { key: 'spinAxis', label: 'Spin axis', unit: '+ fade', step: '0.1' },
-  { key: 'sideSpin', label: 'Side spin', unit: 'rpm', step: '1' },
+  { key: 'spinAxis', label: 'Spin axis', unit: 'L / R', step: '0.1', signed: true },
+  { key: 'sideSpin', label: 'Side spin', unit: 'L / R rpm', step: '1', signed: true },
+  { key: 'clubPath', label: 'Club path', unit: 'L / R', step: '0.1', signed: true },
+  { key: 'faceToTarget', label: 'Face to target', unit: 'L / R', step: '0.1', signed: true },
+  { key: 'faceToPath', label: 'Face to path', unit: 'L / R', step: '0.1', signed: true },
   { key: 'carry', label: 'Carry', unit: 'yd', step: '0.1' },
   { key: 'apex', label: 'Apex', unit: 'ft', step: '0.1' },
-  { key: 'curve', label: 'Curve', unit: '+ right yd', step: '0.1' },
+  { key: 'curve', label: 'Curve', unit: 'L / R yd', step: '0.1', signed: true },
 ];
 
 const SOURCE_LABEL = { screen: 'screenshot', typed: 'typed', model: 'calculated' } as const;
@@ -55,10 +59,31 @@ export function TracerPanel({
   const [reading, setReading] = useState(false);
   const [localNote, setLocalNote] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ field: ShotField; text: string } | null>(null);
+  const [pendingSide, setPendingSide] = useState<Partial<Record<ShotField, -1 | 1>>>({});
+  const flight = useMemo(() => simulateShot(shot), [shot]);
 
-  function shown(field: ShotField): string {
+  function sideFor(field: ShotField): -1 | 1 | 0 {
     const value = shot[field];
-    return value == null ? '' : String(value);
+    if (typeof value === 'number' && value < 0) return -1;
+    if (typeof value === 'number' && value > 0) return 1;
+    return pendingSide[field] ?? 0;
+  }
+
+  function shown(field: ShotField, signed: boolean): string {
+    const value = shot[field];
+    if (value == null) return '';
+    return signed ? String(Math.abs(value)) : String(value);
+  }
+
+  function commitSigned(field: ShotField, text: string, side: -1 | 1 | 0) {
+    const trimmed = text.trim();
+    if (trimmed === '' || trimmed === '.') {
+      if (trimmed === '') onShot(editShot(shot, field, null));
+      return;
+    }
+    const magnitude = Number(trimmed);
+    if (!Number.isFinite(magnitude)) return;
+    onShot(editShot(shot, field, side < 0 ? withSide(magnitude, -1) : withSide(magnitude, 1)));
   }
 
   return (
@@ -107,8 +132,10 @@ export function TracerPanel({
       <div className="tracer-grid">
         {FIELDS.map((field) => {
           const source = shot.sources[field.key];
+          const signed = Boolean(field.signed);
+          const side = sideFor(field.key);
           return (
-            <label key={field.key} className="tracer-row">
+            <div key={field.key} className="tracer-row">
               <span>
                 {field.label}
                 <em>
@@ -116,32 +143,84 @@ export function TracerPanel({
                   {source ? ` · ${SOURCE_LABEL[source]}` : ''}
                 </em>
               </span>
-              <input
-                type="number"
-                inputMode="decimal"
-                step={field.step}
-                value={draft?.field === field.key ? draft.text : shown(field.key)}
-                aria-label={field.label}
-                data-testid={`tracer-${field.key}`}
-                onBlur={() => setDraft(null)}
-                onChange={(event) => {
-                  const text = event.target.value;
-                  setDraft({ field: field.key, text });
-                  const trimmed = text.trim();
-                  if (trimmed === '' || trimmed === '-' || trimmed === '.' || trimmed === '-.') {
-                    if (trimmed === '') onShot(editShot(shot, field.key, null));
-                    return;
-                  }
-                  const value = Number(trimmed);
-                  if (!Number.isFinite(value)) return;
-                  onShot(editShot(shot, field.key, value));
-                }}
-              />
-            </label>
+              {signed ? (
+                <span className="tracer-signed">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={draft?.field === field.key ? draft.text : shown(field.key, true)}
+                    aria-label={field.label}
+                    data-testid={`tracer-${field.key}`}
+                    onBlur={() => setDraft(null)}
+                    onChange={(event) => {
+                      const raw = event.target.value.trim();
+                      const typedLeft = raw.startsWith('-');
+                      const text = raw.replace(/[^0-9.]/g, '');
+                      const nextSide = typedLeft ? -1 : side;
+                      if (typedLeft) setPendingSide((prev) => ({ ...prev, [field.key]: -1 }));
+                      setDraft({ field: field.key, text });
+                      commitSigned(field.key, text, nextSide);
+                    }}
+                  />
+                  <span className="tracer-sign">
+                    <button
+                      type="button"
+                      aria-label={`${field.label} left`}
+                      aria-pressed={side === -1}
+                      data-testid={`tracer-${field.key}-l`}
+                      onClick={() => {
+                        setPendingSide((prev) => ({ ...prev, [field.key]: -1 }));
+                        const value = shot[field.key];
+                        if (typeof value === 'number') onShot(editShot(shot, field.key, withSide(value, -1)));
+                      }}
+                    >
+                      L
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`${field.label} right`}
+                      aria-pressed={side === 1}
+                      data-testid={`tracer-${field.key}-r`}
+                      onClick={() => {
+                        setPendingSide((prev) => ({ ...prev, [field.key]: 1 }));
+                        const value = shot[field.key];
+                        if (typeof value === 'number') onShot(editShot(shot, field.key, withSide(value, 1)));
+                      }}
+                    >
+                      R
+                    </button>
+                  </span>
+                </span>
+              ) : (
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step={field.step}
+                  value={draft?.field === field.key ? draft.text : shown(field.key, false)}
+                  aria-label={field.label}
+                  data-testid={`tracer-${field.key}`}
+                  onBlur={() => setDraft(null)}
+                  onChange={(event) => {
+                    const text = event.target.value;
+                    setDraft({ field: field.key, text });
+                    const trimmed = text.trim();
+                    if (trimmed === '' || trimmed === '-' || trimmed === '.' || trimmed === '-.') {
+                      if (trimmed === '') onShot(editShot(shot, field.key, null));
+                      return;
+                    }
+                    const value = Number(trimmed);
+                    if (!Number.isFinite(value)) return;
+                    onShot(editShot(shot, field.key, value));
+                  }}
+                />
+              )}
+            </div>
           );
         })}
       </div>
-      <p className="panel-hint">Blank direction and spin axis are treated as straight. Carry, apex, and curve are calculated when the screenshot does not show them.</p>
+      <p className="panel-hint">
+        L is left (negative) and R is right (positive). Launch direction is the ball’s start line, not club path. If launch direction is blank, it is about 80% of face to target. If spin axis is blank, it follows face to path, and that sets the curve.
+      </p>
       <div className="panel-actions">
         <button type="button" className="btn" data-testid="tracer-ball" onClick={() => onCalibrate('ball')}>
           {tracer.ball ? 'Move ball' : 'Tap the ball'}
@@ -190,14 +269,15 @@ export function TracerPanel({
         />
       </label>
       <p className="panel-hint" data-testid="tracer-impact">
-        Impact {tracer.impactTime == null ? 'not marked' : formatTime(tracer.impactTime)}. The line grows from that frame.
+        Impact {tracer.impactTime == null ? 'not set' : formatTime(tracer.impactTime)}. Flight{' '}
+        {flight ? `${flight.flightTime.toFixed(1)}s` : '—'} until the ball is on the ground. Pause on the hit and tap Set impact time. The line grows with playback, including slow motion, and stays up after it lands. If the clip ends first, it keeps going on the last frame.
       </p>
       <div className="panel-actions">
-        <button type="button" className="btn" data-testid="tracer-detect" disabled={busy} onClick={onDetect}>
-          {busy ? 'Finding impact…' : 'Detect impact'}
+        <button type="button" className="btn primary" data-testid="tracer-mark" onClick={onMarkImpact}>
+          Set impact time
         </button>
-        <button type="button" className="btn" data-testid="tracer-mark" onClick={onMarkImpact}>
-          Mark impact
+        <button type="button" className="btn" data-testid="tracer-detect" disabled={busy} onClick={onDetect}>
+          {busy ? 'Finding impact…' : 'Detect from sound'}
         </button>
       </div>
       <button type="button" className="text-btn" onClick={onBack}>

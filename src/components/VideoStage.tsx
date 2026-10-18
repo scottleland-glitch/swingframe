@@ -31,6 +31,8 @@ export type VideoEngine = {
   getTime: () => number;
   getDuration: () => number;
   getPaused: () => boolean;
+  /** True when playback has stopped at the end of the clip or the trim. */
+  getEnded: () => boolean;
   undoDraft: () => boolean;
   hasDraft: () => boolean;
   zoomBy: (factor: number) => void;
@@ -994,6 +996,7 @@ export const VideoStage = forwardRef<
       getTime: () => apiRef.current?.getTime() ?? 0,
       getDuration: () => apiRef.current?.getDuration() ?? 0,
       getPaused: () => apiRef.current?.getPaused() ?? true,
+      getEnded: () => apiRef.current?.getEnded() ?? false,
       undoDraft: () => apiRef.current?.undoDraft() ?? false,
       hasDraft: () => apiRef.current?.hasDraft() ?? false,
       zoomBy: (factor: number) => apiRef.current?.zoomBy(factor),
@@ -1015,6 +1018,16 @@ export const VideoStage = forwardRef<
       return typeof dur === 'number' && Number.isFinite(dur) ? dur : 0;
     },
     getPaused: () => (manualRef.current ? false : (videoRef.current?.paused ?? true)),
+    getEnded: () => {
+      const video = videoRef.current;
+      if (!video || manualRef.current || !video.paused) return false;
+      const time = video.currentTime;
+      const dur = Number.isFinite(video.duration) ? video.duration : 0;
+      const trimEnd = trimOutRef.current;
+      const start = trimInRef.current ?? 0;
+      const end = trimEnd != null && trimEnd > start ? trimEnd : dur;
+      return end > 0 && time >= end - 0.05;
+    },
     undoDraft,
     hasDraft: () => anglePtsRef.current.length > 0 || draftRef.current != null,
     zoomBy,

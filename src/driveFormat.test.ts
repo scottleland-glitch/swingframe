@@ -110,6 +110,9 @@ describe('backup json', () => {
       spin: 2600,
       spinAxis: null,
       sideSpin: null,
+      clubPath: -1.5,
+      faceToTarget: 0.8,
+      faceToPath: 2.3,
       carry: 280,
       apex: null,
       curve: null,
@@ -125,6 +128,9 @@ describe('backup json', () => {
     };
     const parsed = parseBackup(JSON.stringify(toBackup(meta, drive)));
     expect(parsed?.shot?.ballSpeed).toBe(167);
+    expect(parsed?.shot?.clubPath).toBe(-1.5);
+    expect(parsed?.shot?.faceToTarget).toBe(0.8);
+    expect(parsed?.shot?.faceToPath).toBe(2.3);
     expect(parsed?.shot?.sources.carry).toBe('typed');
     expect(parsed?.tracer?.impactTime).toBe(1.25);
     expect(parsed?.tracer?.ball).toEqual({ x: 0.5, y: 0.7 });

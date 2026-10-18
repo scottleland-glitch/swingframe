@@ -10,17 +10,22 @@ const M_TO_YARDS = 1.0936133;
 const M_TO_FEET = 3.2808399;
 
 /**
- * Constant-coefficient drag plus Magnus lift.
- * Tuned so a 167 mph, 12° launch, 2600 rpm, straight shot carries about 282 yards
- * and apexes about 110 feet. This is not Foresight's ball model.
+ * Constant-coefficient drag plus Magnus lift, with a slow spin decay.
+ * A 167 mph, 12° launch, 2600 rpm, straight shot carries about 280 yards,
+ * apexes a bit over 100 feet, and stays up about 6 to 7 seconds.
+ * A wedge is closer to 5 or 6 seconds. This is not Foresight's ball model.
  */
 const CD_BASE = 0.21;
 const CD_SPIN = 0.2;
 const CL_PER_S = 1.6;
 const CL_MAX = 0.25;
 const STEP = 0.005;
+/** Spin eases off over the flight so hang time stays in a real range. */
+const SPIN_TAU = 16;
+/** Start line is mostly face angle, inside the usual 75–85% share. */
+const FACE_TO_HLA = 0.8;
 
-const MODEL_FIELDS: ShotField[] = ['spinAxis', 'sideSpin', 'carry', 'apex', 'curve'];
+const MODEL_FIELDS: ShotField[] = ['hla', 'spinAxis', 'sideSpin', 'carry', 'apex', 'curve'];
 
 export interface FlightSample {
   t: number;
@@ -47,6 +52,9 @@ export function emptyShot(): ShotData {
     spin: null,
     spinAxis: null,
     sideSpin: null,
+    clubPath: null,
+    faceToTarget: null,
+    faceToPath: null,
     carry: null,
     apex: null,
     curve: null,
@@ -117,9 +125,10 @@ export function simulateShot(shot: ShotData): FlightResult | null {
   const hla = ((shot.hla ?? 0) * Math.PI) / 180;
   const axis = (axisDegrees(shot) * Math.PI) / 180;
   const omega = (Math.max(0, shot.spin) * 2 * Math.PI) / 60;
-  const wx = -omega * Math.cos(axis);
-  const wy = omega * Math.sin(axis);
-  const wz = 0;
+  let wx = -omega * Math.cos(axis);
+  let wy = omega * Math.sin(axis);
+  let wz = 0;
+  const spinDecay = Math.exp(-STEP / SPIN_TAU);
 
   let state: V6 = [
     0,
@@ -170,6 +179,9 @@ export function simulateShot(shot: ShotData): FlightResult | null {
       samples.push({ t, x: state[0], y: state[1], z: state[2] });
       since = 0;
     }
+    wx *= spinDecay;
+    wy *= spinDecay;
+    wz *= spinDecay;
     if (t > 12) break;
   }
   return null;
@@ -185,12 +197,19 @@ function clearModel(shot: ShotData, keep: ShotField | null) {
   }
 }
 
-/** Fill blank carry, apex, and curve. Measured and typed numbers stay as they are. */
+/** Fill blank launch direction, spin axis, carry, apex, and curve. Measured numbers stay. */
 export function completeShot(input: ShotData): ShotData {
   const shot: ShotData = { ...input, sources: { ...input.sources } };
+  if (shot.hla == null && shot.faceToTarget != null) {
+    shot.hla = roundTo(shot.faceToTarget * FACE_TO_HLA, 1);
+    shot.sources.hla = 'model';
+  }
   if (shot.spinAxis == null && shot.spin != null && shot.sideSpin != null && Math.abs(shot.spin) > 1) {
     const ratio = Math.max(-1, Math.min(1, shot.sideSpin / shot.spin));
     shot.spinAxis = roundTo((Math.asin(ratio) * 180) / Math.PI, 1);
+    shot.sources.spinAxis = 'model';
+  } else if (shot.spinAxis == null && shot.faceToPath != null) {
+    shot.spinAxis = roundTo(shot.faceToPath, 1);
     shot.sources.spinAxis = 'model';
   }
   if (shot.sideSpin == null && shot.spin != null && shot.spinAxis != null) {
@@ -198,7 +217,13 @@ export function completeShot(input: ShotData): ShotData {
     shot.sources.sideSpin = 'model';
   }
   const flight = simulateShot(shot);
-  if (!flight) return shot;
+  if (!flight) {
+    if (shot.curve == null && shot.faceToPath != null && shot.carry != null) {
+      shot.curve = roundTo(shot.faceToPath * (shot.carry / 75), 1);
+      shot.sources.curve = 'model';
+    }
+    return shot;
+  }
   if (shot.carry == null) {
     shot.carry = roundTo(flight.carryYd, 1);
     shot.sources.carry = 'model';

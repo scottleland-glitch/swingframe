@@ -106,7 +106,20 @@ export function toBackup(meta: SwingMeta, drive: DriveLink): SwingBackupFile {
   };
 }
 
-const SHOT_FIELDS: ShotField[] = ['ballSpeed', 'vla', 'hla', 'spin', 'spinAxis', 'sideSpin', 'carry', 'apex', 'curve'];
+const SHOT_FIELDS: ShotField[] = [
+  'ballSpeed',
+  'vla',
+  'hla',
+  'spin',
+  'spinAxis',
+  'sideSpin',
+  'clubPath',
+  'faceToTarget',
+  'faceToPath',
+  'carry',
+  'apex',
+  'curve',
+];
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -122,6 +135,9 @@ function sanitizeShot(value: unknown): ShotData | null {
     spin: null,
     spinAxis: null,
     sideSpin: null,
+    clubPath: null,
+    faceToTarget: null,
+    faceToPath: null,
     carry: null,
     apex: null,
     curve: null,
