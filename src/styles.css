@@ -43,6 +43,8 @@ img { max-width: 100%; }
 .app-shell {
   position: fixed;
   inset: 0;
+  height: 100%;
+  height: 100dvh;
   display: flex;
   background:
     radial-gradient(900px 280px at 50% -80px, rgba(228, 255, 106, 0.08), transparent 70%),
@@ -661,13 +663,15 @@ textarea { resize: vertical; }
   overflow: hidden;
   --player-bar-height: calc(180px + var(--safe-bottom));
 }
-.player-screen.is-immersive {
+.player-screen.is-immersive,
+.player-screen.is-setup {
   position: fixed;
   inset: 0;
   z-index: 30;
   width: 100%;
   height: 100%;
   height: 100dvh;
+  max-height: 100dvh;
 }
 .player-screen.is-immersive .float-close,
 .player-screen.is-immersive .time-pill,
@@ -683,7 +687,7 @@ textarea { resize: vertical; }
 .player-screen.is-setup .tool-backdrop,
 .player-screen.is-setup .pinch-banner,
 .player-screen.is-setup .player-banner,
-.player-screen.is-setup:not(.is-setup-impact) .time-pill {
+.player-screen.is-setup:not(.is-setup-playback) .time-pill {
   display: none;
 }
 .player-screen.is-setup.is-setup-edit .tracer-quick {
@@ -757,21 +761,29 @@ textarea { resize: vertical; }
   font-size: 15px;
 }
 .setup-impact .icon { width: 18px; height: 18px; }
-.setup-impact-stack {
-  position: absolute;
+.setup-playback {
+  position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 4;
+  z-index: 40;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding-bottom: calc(8px + var(--safe-bottom));
+  padding: 10px calc(12px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(12px + var(--safe-left));
+  background: #fff;
+  color: #111;
+  color-scheme: light;
+  box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.5);
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  pointer-events: auto;
 }
-.setup-impact-stack .setup-impact {
+.setup-playback .setup-impact {
   position: static;
   transform: none;
+  margin-bottom: 2px;
 }
 .setup-transport {
   align-self: stretch;
@@ -780,23 +792,25 @@ textarea { resize: vertical; }
 }
 .setup-transport .scrubber.slim { height: 44px; }
 .setup-transport .scrubber-track {
-  background: rgba(0, 0, 0, 0.16);
-  top: 20px;
-  height: 4px;
+  background: rgba(0, 0, 0, 0.22);
+  top: 19px;
+  height: 6px;
 }
 .setup-transport .scrubber-fill { background: #111; }
 .setup-transport .scrubber-thumb {
-  width: 22px;
-  height: 22px;
-  top: 11px;
-  margin-left: -11px;
+  width: 28px;
+  height: 28px;
+  top: 8px;
+  margin-left: -14px;
   background: #111;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px #111, 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 .setup-transport-row {
   display: flex;
   justify-content: center;
   gap: 28px;
-  padding: 0 12px 4px;
+  padding: 0 12px 2px;
 }
 .setup-transport-row .bar-icon {
   flex: none;
@@ -806,9 +820,9 @@ textarea { resize: vertical; }
   min-height: 44px;
   color: #111;
 }
-.player-screen.is-setup-impact .manual-pill,
-.player-screen.is-immersive.is-setup-impact .manual-pill {
-  bottom: calc(168px + var(--safe-bottom));
+.player-screen.is-setup-playback .manual-pill,
+.player-screen.is-immersive.is-setup-playback .manual-pill {
+  bottom: calc(210px + var(--safe-bottom));
 }
 .manual-pill {
   position: absolute;

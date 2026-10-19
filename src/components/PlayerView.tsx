@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { DRAW_COLORS, FPS_OPTIONS, SPEEDS } from '../constants';
 import { deleteSwing, getVideo, listSwings, releaseLocalVideo } from '../db';
 import { backupSwing, downloadSwingVideo } from '../driveApi';
@@ -15,7 +16,7 @@ import { detectFeet, frameAtTime } from '../tracer/pose';
 import { defaultTracer, projectFlight } from '../tracer/project';
 import { manualTrace, shapePoints } from '../tracer/manualTrace';
 import type { TracerMarks } from '../tracer/paintTracer';
-import { ballGuess, launchIsSet, previousStep, resetSetup, setupStep, type SetupPhase } from '../tracer/setup';
+import { ballGuess, launchIsSet, previousStep, resetSetup, setupStep, showsPlacementReticle, type SetupPhase } from '../tracer/setup';
 import { clipEndTime, holdSpan, nextHold, playClock, tracerPlayhead } from '../tracer/timing';
 import type { Drawing, Pt, ShotData, ShotShape, SwingMeta, Tool, TracerCalibration } from '../types';
 import { useSwing } from '../useSwing';
@@ -25,7 +26,7 @@ import { Dialog } from './Dialog';
 import { Icon, type IconName } from './Icons';
 import { Scrubber } from './Scrubber';
 import { TracerPanel } from './TracerPanel';
-import { VideoStage, type EditWhich, type VideoEngine } from './VideoStage';
+import { VideoStage, type VideoEngine } from './VideoStage';
 
 const HINTS: Record<Tool, string> = {
   select: 'Two fingers move, pinch, or turn a drawing. Drag a white handle with one finger to fine-tune.',
@@ -38,37 +39,6 @@ const HINTS: Record<Tool, string> = {
   vline: 'Two fingers place the plumb line.',
   erase: 'Tap a drawing to remove it.',
 };
-
-function keptMarkers(cal: TracerCalibration, phase: SetupPhase) {
-  if (phase === 'edit') {
-    if (cal.mode === 'manual') {
-      return {
-        ball: null,
-        target: null,
-        ground: null,
-        start: cal.manualStart ?? null,
-        apex: cal.manualApex ?? null,
-        finish: cal.manualFinish ?? null,
-      };
-    }
-    return { ball: cal.ball, target: cal.target, ground: cal.ground ?? null };
-  }
-  if (cal.mode === 'manual') {
-    return {
-      ball: null,
-      target: null,
-      ground: null,
-      start: phase === 'start' ? null : cal.manualStart ?? null,
-      apex: phase === 'apex' ? null : cal.manualApex ?? null,
-      finish: phase === 'finish' ? null : cal.manualFinish ?? null,
-    };
-  }
-  return {
-    ball: phase === 'ball' ? null : cal.ball,
-    target: phase === 'aim' || cal.aimSuggested === true ? null : cal.target,
-    ground: phase === 'horizon' ? null : cal.ground ?? null,
-  };
-}
 
 function showAimMarks(cal: TracerCalibration): TracerMarks | null {
   if (cal.showAim !== true) return null;
@@ -834,23 +804,6 @@ export function PlayerView({
     [confirmDraft],
   );
 
-  const onEditGesture = useCallback(
-    (which: EditWhich, point: Pt, phase: 'move' | 'up') => {
-      if (calRef.current.locked) return;
-      const cal = calRef.current;
-      const immediate = phase === 'up';
-      if (which === 'ball') rememberTracer(shotRef.current, { ...cal, ball: point }, immediate);
-      else if (which === 'target') {
-        aimEpoch.current += 1;
-        rememberTracer(shotRef.current, { ...cal, target: point, aimSuggested: false }, immediate);
-      } else if (which === 'ground') rememberTracer(shotRef.current, { ...cal, ground: point }, immediate);
-      else if (which === 'start') rememberTracer(shotRef.current, { ...cal, mode: 'manual', manualStart: point }, immediate);
-      else if (which === 'apex') rememberTracer(shotRef.current, { ...cal, manualApex: point }, immediate);
-      else rememberTracer(shotRef.current, { ...cal, manualFinish: point }, immediate);
-    },
-    [rememberTracer],
-  );
-
   const setupBack = useCallback(() => {
     if (calRef.current.locked) return;
     const phase = setupPhaseRef.current;
@@ -1188,13 +1141,8 @@ export function PlayerView({
       : setupPhase === 'horizon' || setupPhase === 'finish'
         ? 'ground'
         : 'target';
-  const placingPoint =
-    setupPhase === 'aim' ||
-    setupPhase === 'ball' ||
-    setupPhase === 'horizon' ||
-    setupPhase === 'start' ||
-    setupPhase === 'apex' ||
-    setupPhase === 'finish';
+  const placingPoint = setupPhase != null && showsPlacementReticle(setupPhase);
+  const playbackStep = setupPhase === 'impact' || setupPhase === 'lock';
   const numbersMissing = activeCal.mode !== 'manual' && activeCal.impactTime != null && !launchIsSet(activeShot);
   const setupHint =
     setupPhase === 'aim'
@@ -1217,7 +1165,7 @@ export function PlayerView({
         'screen player-screen',
         immersive && 'is-immersive',
         setupPhase && 'is-setup',
-        setupPhase === 'impact' && 'is-setup-impact',
+        playbackStep && 'is-setup-playback',
         setupPhase === 'edit' && 'is-setup-edit',
       )}
     >
@@ -1253,14 +1201,12 @@ export function PlayerView({
               : null
           }
           onSetupGesture={onSetupGesture}
-          editMarkers={setupPhase ? keptMarkers(activeCal, setupPhase) : null}
-          onEditGesture={onEditGesture}
           freezeDraw={setupPhase != null}
           tracerPath={
             activeCal.showTracer !== false && (tuningTracer || activeCal.impactTime != null) ? previewPath : null
           }
           tracerElapsed={tracerElapsed}
-          tracerMarks={setupPhase == null ? showAimMarks(activeCal) : null}
+          tracerMarks={setupPhase == null || setupPhase === 'edit' ? showAimMarks(activeCal) : null}
         />
       </div>
 
@@ -1310,15 +1256,24 @@ export function PlayerView({
               {setupHint}
             </p>
           )}
-          {setupPhase === 'impact' && activeCal.locked !== true && (
-            <div className="setup-impact-stack" data-testid="impact-transport">
-              <button type="button" className="setup-impact" data-testid="set-impact-setup" onClick={markImpact}>
-                Set impact time
-              </button>
-              <div
-                className="setup-transport"
-                onPointerDown={(event) => event.stopPropagation()}
-              >
+          {playbackStep &&
+            createPortal(
+            <div
+              className="setup-playback"
+              data-testid="impact-transport"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              {setupPhase === 'impact' ? (
+                <button type="button" className="setup-impact" data-testid="set-impact-setup" onClick={markImpact}>
+                  Set impact time
+                </button>
+              ) : (
+                <button type="button" className="setup-impact" data-testid="setup-lock" onClick={commitLock}>
+                  <Icon name="lock" />
+                  Lock
+                </button>
+              )}
+              <div className="setup-transport">
                 <Scrubber className="slim" value={clock.time} max={clock.duration} onScrub={scrub} testId="impact-scrubber" />
                 <div className="setup-transport-row">
                   <button type="button" className="bar-icon" aria-label="Previous frame" data-testid="impact-back" onClick={() => step(-1)}>
@@ -1338,14 +1293,9 @@ export function PlayerView({
                   </button>
                 </div>
               </div>
-            </div>
-          )}
-          {setupPhase === 'lock' && (
-            <button type="button" className="setup-impact" data-testid="setup-lock" onClick={commitLock}>
-              <Icon name="lock" />
-              Lock
-            </button>
-          )}
+            </div>,
+              document.body,
+            )}
           {setupPhase !== 'edit' && (
             <div className={cx('manual-pill', shapesOpen && 'is-open')} data-testid="manual-trace">
               <button
@@ -1824,7 +1774,7 @@ export function PlayerView({
           <div className="sheet-body">
             <p className="tip">
               The video stays on this page. Tap the pencil for drawing tools. Place a drawing with two fingers. Undo is on the white bar, and Clear all is in the drawing menu.
-              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon walks through aim, ball, and horizon. Manual trace, at the bottom left, draws a flight through start, apex, and finish. On Set impact time, the scrubber and frame step sit along the bottom. The undo arrow steps back, and the round arrow starts setup over. Circles you already placed stay on the picture and can be dragged. Then Lock. Lock opens launch numbers only when they are still empty. A manual trace never asks for numbers. After Lock, unlock with the pill, then start over if you want the other setup. The 123 icon opens the numbers any time. Clear tracer removes the line. Undo puts it back.
+              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon walks through aim, ball, and horizon. Manual trace, at the bottom left, draws a flight through start, apex, and finish. Only the circle for the current step is on the picture. The undo arrow brings the previous circle back. On Set impact time and on Lock, a white bar at the bottom has the scrubber, frame step, and play, and those buttons sit above it. No setup circles are on the picture then. Lock opens launch numbers only when they are still empty. A manual trace never asks for numbers. After Lock, the aim pill shows the points. Unlock with the pill, then the round arrow starts setup over. The 123 icon opens the numbers any time. Clear tracer removes the line. Undo puts it back.
             </p>
             {swing.notes ? <p className="note-block">{swing.notes}</p> : null}
             <div className="fps-row" role="group" aria-label="Frame step size">

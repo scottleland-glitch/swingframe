@@ -46,6 +46,21 @@ export function setupStep(tracer: TracerCalibration): SetupPhase {
   return 'edit';
 }
 
+/**
+ * Guided setup draws one circle: the point for this step.
+ * Impact, Lock, and a finished edit draw none. Back returns to the previous step, which shows that circle again.
+ */
+export function showsPlacementReticle(phase: SetupPhase): boolean {
+  return (
+    phase === 'aim' ||
+    phase === 'ball' ||
+    phase === 'horizon' ||
+    phase === 'start' ||
+    phase === 'apex' ||
+    phase === 'finish'
+  );
+}
+
 /** The step before this one. Aim is the start, so it has no previous step. */
 export function previousStep(phase: SetupPhase, mode: TracerCalibration['mode']): SetupPhase | null {
   switch (phase) {

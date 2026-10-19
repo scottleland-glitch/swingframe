@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyShot } from './flight';
 import { defaultTracer } from './project';
-import { ballGuess, launchIsSet, previousStep, resetSetup, setupStep } from './setup';
+import { ballGuess, launchIsSet, previousStep, resetSetup, setupStep, showsPlacementReticle } from './setup';
 
 describe('tracer setup', () => {
   it('walks aim, then ball, then horizon, then impact, and edits a finished setup', () => {
@@ -82,6 +82,18 @@ describe('tracer setup', () => {
     expect(cleared.mode).toBeUndefined();
     expect(cleared.locked).toBe(false);
     expect(setupStep(cleared)).toBe('aim');
+  });
+
+  it('shows only the circle for the step being placed', () => {
+    expect(showsPlacementReticle('aim')).toBe(true);
+    expect(showsPlacementReticle('ball')).toBe(true);
+    expect(showsPlacementReticle('horizon')).toBe(true);
+    expect(showsPlacementReticle('start')).toBe(true);
+    expect(showsPlacementReticle('apex')).toBe(true);
+    expect(showsPlacementReticle('finish')).toBe(true);
+    expect(showsPlacementReticle('impact')).toBe(false);
+    expect(showsPlacementReticle('lock')).toBe(false);
+    expect(showsPlacementReticle('edit')).toBe(false);
   });
 
   it('treats any saved launch number as enough to skip the numbers sheet', () => {
