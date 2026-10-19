@@ -158,4 +158,4 @@ export interface SwingMeta {
   tracer?: TracerCalibration | null;
 }
 
-export type Route = { name: 'library' } | { name: 'player'; id: string };
+export type Route = { name: 'welcome' } | { name: 'library' } | { name: 'player'; id: string };

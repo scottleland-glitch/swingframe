@@ -1391,3 +1391,116 @@ textarea { resize: vertical; }
     transition: none !important;
   }
 }
+
+.welcome {
+  position: relative;
+  overflow: hidden;
+  background: #0b1424;
+  color: #f4f7fb;
+}
+.welcome-hero {
+  position: absolute;
+  z-index: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-height: 78%;
+  object-fit: contain;
+  object-position: center bottom;
+  pointer-events: none;
+  user-select: none;
+}
+.welcome-fade {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    #0b1424 0%,
+    #0b1424 26%,
+    rgba(11, 20, 36, 0.94) 44%,
+    rgba(11, 20, 36, 0.4) 62%,
+    rgba(11, 20, 36, 0) 76%
+  );
+  pointer-events: none;
+}
+.welcome-head {
+  position: absolute;
+  z-index: 2;
+  top: calc(22px + var(--safe-top));
+  left: calc(20px + var(--safe-left));
+  right: calc(78px + var(--safe-right));
+}
+.welcome-word {
+  margin: 0;
+  font-family: "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-weight: 300;
+  font-size: 34px;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+.welcome-sub {
+  margin: 8px 0 0;
+  font-family: "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: rgba(244, 247, 251, 0.72);
+}
+.welcome-version {
+  margin: 12px 0 0;
+  font-family: "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(244, 247, 251, 0.42);
+}
+.welcome-actions {
+  position: absolute;
+  z-index: 3;
+  top: calc(12px + var(--safe-top));
+  right: calc(14px + var(--safe-right));
+}
+.welcome-plus {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+}
+.welcome-plus .icon { width: 22px; height: 22px; }
+.welcome-plus[aria-expanded='true'] { background: rgba(255, 255, 255, 0.28); }
+.welcome-menu {
+  position: absolute;
+  top: 56px;
+  right: 0;
+  min-width: 188px;
+  padding: 6px;
+  border-radius: 18px;
+  background: rgba(12, 20, 34, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(22px) saturate(1.3);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  display: flex;
+  flex-direction: column;
+}
+.welcome-menu button {
+  text-align: left;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-family: "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  color: #fff;
+}
+.welcome-menu button:active { background: rgba(255, 255, 255, 0.14); }

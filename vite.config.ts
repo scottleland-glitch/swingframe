@@ -166,7 +166,7 @@ export default defineConfig({
       },
       workbox: {
         cacheId: 'swingframe',
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,gz,wasm,task}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,jpg,jpeg,ico,webmanifest,gz,wasm,task}'],
         maximumFileSizeToCacheInBytes: 16 * 1024 * 1024,
         // Precache URLs from the build are root-relative. Prefix them so the
         // worker only caches this app, not the github.io origin root.

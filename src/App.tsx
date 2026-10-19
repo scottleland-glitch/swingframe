@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AddSwingSheet } from './components/AddSwingSheet';
 import { LibraryView } from './components/LibraryView';
 import { PlayerView } from './components/PlayerView';
+import { WelcomeView } from './components/WelcomeView';
 import type { Route } from './types';
 
 type Hist = { route: Route; adding: boolean };
@@ -9,7 +10,7 @@ type Hist = { route: Route; adding: boolean };
 function isRoute(value: unknown): value is Route {
   if (!value || typeof value !== 'object') return false;
   const name = (value as { name?: unknown }).name;
-  if (name === 'library') return true;
+  if (name === 'welcome' || name === 'library') return true;
   if (name === 'player') return typeof (value as { id?: unknown }).id === 'string';
   return false;
 }
@@ -17,7 +18,7 @@ function isRoute(value: unknown): value is Route {
 function readHist(): Hist {
   const state = window.history.state as Partial<Hist> | null;
   if (state && isRoute(state.route)) return { route: state.route, adding: Boolean(state.adding) };
-  return { route: { name: 'library' }, adding: false };
+  return { route: { name: 'welcome' }, adding: false };
 }
 
 export function App() {
@@ -28,12 +29,12 @@ export function App() {
 
   useEffect(() => {
     if (!isRoute((window.history.state as Partial<Hist> | null)?.route)) {
-      window.history.replaceState({ route: { name: 'library' }, adding: false } satisfies Hist, '');
+      window.history.replaceState({ route: { name: 'welcome' }, adding: false } satisfies Hist, '');
     }
     const onPop = (event: PopStateEvent) => {
       const state = event.state as Partial<Hist> | null;
       if (!state || !isRoute(state.route)) {
-        setRoute({ name: 'library' });
+        setRoute({ name: 'welcome' });
         setAdding(false);
         return;
       }
@@ -71,8 +72,16 @@ export function App() {
 
   return (
     <div className="app-shell">
+      {route.name === 'welcome' && (
+        <WelcomeView onNewSession={openAdd} onHistory={() => navigate({ name: 'library' })} />
+      )}
       {route.name === 'library' && (
-        <LibraryView key={libraryKey} onOpen={(id) => navigate({ name: 'player', id })} onAdd={openAdd} />
+        <LibraryView
+          key={libraryKey}
+          onOpen={(id) => navigate({ name: 'player', id })}
+          onAdd={openAdd}
+          onHome={() => navigate({ name: 'welcome' })}
+        />
       )}
       {route.name === 'player' && (
         <PlayerView key={route.id} id={route.id} onBack={back} onChanged={() => setVersion((value) => value + 1)} />

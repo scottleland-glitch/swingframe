@@ -25,7 +25,15 @@ const VIEW_FILTERS: { id: ViewFilter; label: string; name: string }[] = [
   { id: 'face', label: 'FO', name: 'Face On' },
 ];
 
-export function LibraryView({ onOpen, onAdd }: { onOpen: (id: string) => void; onAdd: () => void }) {
+export function LibraryView({
+  onOpen,
+  onAdd,
+  onHome,
+}: {
+  onOpen: (id: string) => void;
+  onAdd: () => void;
+  onHome: () => void;
+}) {
   const [swings, setSwings] = useState<SwingMeta[]>([]);
   const [clubFilter, setClubFilter] = useState<ClubFilter>('all');
   const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
@@ -118,6 +126,9 @@ export function LibraryView({ onOpen, onAdd }: { onOpen: (id: string) => void; o
   return (
     <div className="screen">
       <header className="topbar library-top">
+        <button type="button" className="icon-btn" aria-label="Home" data-testid="library-home" onClick={onHome}>
+          <Icon name="back" />
+        </button>
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">
             <Icon name="line" />
