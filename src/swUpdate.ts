@@ -37,7 +37,12 @@ export function startServiceWorkerUpdates(): void {
   const refresh = () => {
     void navigator.serviceWorker
       .register(script, { scope, updateViaCache: 'none' })
-      .then((registration) => registration.update())
+      .then(async (registration) => {
+        await registration.update();
+        if (registration.waiting && navigator.serviceWorker.controller) {
+          registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+      })
       .catch(() => undefined);
   };
   refresh();

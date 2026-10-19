@@ -688,6 +688,30 @@ describe('descent keeps bending away from the start line', () => {
   });
 });
 
+describe('version 29 tracer picture', () => {
+  it('matches the v29 flight for a 2° left, 40° right driver', () => {
+    const flight = simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, hla: -2, spin: 2500, spinAxis: 40 })!;
+    const camera = { view: 'dtl' as const, height: 1.4, distance: 3.5, fov: 60 };
+    const ball = { x: 0.5, y: 0.78 };
+    const aim = { x: 0.5, y: 0.28 };
+    const ground = { x: 0.18, y: 0.52 };
+    const path = projectFlight(flight.samples, camera, ball, aim, 1080, 1920, ground);
+    const bare = projectFlight(flight.samples, camera, ball, aim, 1080, 1920);
+    let apex = 0;
+    for (let i = 1; i < path.length; i++) if (path[i].y < path[apex].y) apex = i;
+    expect(flight.carryYd).toBeCloseTo(226.9865, 3);
+    expect(flight.curveYd).toBeCloseTo(54.6206, 3);
+    expect(path).toHaveLength(260);
+    expect(path.at(-1)!.x).toBeCloseTo(0.615615, 5);
+    expect(path.at(-1)!.y).toBeCloseTo(0.517682, 5);
+    expect(path.at(-1)!.t).toBeCloseTo(5.1603, 3);
+    expect(path[apex].x).toBeCloseTo(0.488566, 5);
+    expect(path[apex].y).toBeCloseTo(0.394908, 5);
+    expect(bare.at(-1)!.y).toBeCloseTo(0.444167, 5);
+    expect(projectFlight(flight.samples, camera, ball, aim, 1080, 1920, { x: 0.9, y: ground.y })).toEqual(path);
+  });
+});
+
 describe('tracer timing', () => {
   it('hides the line before impact, grows through the flight, and holds the landing', () => {
     expect(tracerPlayhead(1, 1.4, 6.8)).toBe(0);

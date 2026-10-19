@@ -101,12 +101,17 @@ function precacheOnlyUnderBase(): Plugin {
         // finish it until activate's waitUntil resolves, so awaiting it hangs
         // the page. The page reloads itself, once, on this message.
         const refresh = `
+self.addEventListener('install',function(){self.skipWaiting();});
 self.addEventListener('activate',function(event){event.waitUntil((async function(){
+await self.clients.claim();
 var list=await self.clients.matchAll({type:'window',includeUncontrolled:true});
 for(var i=0;i<list.length;i++){
 try{list[i].postMessage({type:'swingframe-updated'})}catch(e){}
 }
 })());});
+self.addEventListener('message',function(event){
+if(event.data&&event.data.type==='SKIP_WAITING')self.skipWaiting();
+});
 `;
         writeFileSync(path, sw.slice(0, arrStart) + JSON.stringify(kept) + sw.slice(arrEnd + 1) + refresh);
       },
