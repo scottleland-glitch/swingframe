@@ -601,6 +601,93 @@ describe('launch line with a horizon tap', () => {
   });
 });
 
+describe('descent keeps bending away from the start line', () => {
+  const portrait = { view: 'dtl' as const, height: 1.4, distance: 3.5, fov: 60 };
+  const tee = { x: 0.5, y: 0.72 };
+  const aim = { x: 0.5, y: 0.28 };
+  const ground = { x: 0.82, y: 0.55 };
+  const width = 1080;
+  const height = 1920;
+
+  function flightFor(club: 'driver' | 'iron', hla: number, axis: number) {
+    if (club === 'driver') {
+      return simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, hla, spin: 2500, spinAxis: axis })!;
+    }
+    return simulateShot({ ...emptyShot(), ballSpeed: 120, vla: 16, hla, spin: 7000, spinAxis: axis })!;
+  }
+
+  /** Pixels off the drawn start line. Positive is right. */
+  function offsetsOf(path: TracerPoint[]) {
+    const rays = imageRays(path, tee, aim, width, height);
+    const first = rays.find((ray) => Math.hypot(ray.across, ray.along) >= 4);
+    const a0 = first ? Math.atan2(first.across, first.along) : 0;
+    return rays.map((ray) => {
+      const rad = Math.hypot(ray.across, ray.along);
+      return { t: ray.t, off: rad * Math.sin(Math.atan2(ray.across, ray.along) - a0) };
+    });
+  }
+
+  function assertFlares(club: 'driver' | 'iron', hla: number, axis: number) {
+    const flight = flightFor(club, hla, axis);
+    const sign = Math.sign(axis);
+    const heading = Math.atan2(flight.samples[1].x, flight.samples[1].z);
+    const world = flight.samples.map((sample) => sample.x * Math.cos(heading) - sample.z * Math.sin(heading));
+    for (let i = 1; i < world.length; i++) {
+      expect((world[i] - world[i - 1]) * sign).toBeGreaterThanOrEqual(-1e-4);
+    }
+    let apex = 0;
+    for (let i = 1; i < flight.samples.length; i++) {
+      if (flight.samples[i].y > flight.samples[apex].y) apex = i;
+    }
+    const worldAscent = world[apex] / flight.samples[apex].t;
+    const worldDescent =
+      (world[world.length - 1] - world[apex]) / (flight.samples[flight.samples.length - 1].t - flight.samples[apex].t);
+    expect(worldDescent * sign).toBeGreaterThanOrEqual(worldAscent * sign);
+
+    const path = projectFlight(flight.samples, portrait, tee, aim, width, height, ground);
+    const offsets = offsetsOf(path);
+    expect(offsets.length).toBeGreaterThan(20);
+    for (let i = 1; i < offsets.length; i++) {
+      expect((offsets[i].off - offsets[i - 1].off) * sign).toBeGreaterThanOrEqual(-0.05);
+    }
+    const before = offsets.filter((point) => point.t <= flight.samples[apex].t + 1e-9);
+    const after = offsets.filter((point) => point.t >= flight.samples[apex].t - 1e-9);
+    expect(before.length).toBeGreaterThan(2);
+    expect(after.length).toBeGreaterThan(2);
+    const ascent = (before[before.length - 1].off - before[0].off) / (before[before.length - 1].t - before[0].t);
+    const descent = (after[after.length - 1].off - after[0].off) / (after[after.length - 1].t - after[0].t);
+    expect(descent * sign).toBeGreaterThanOrEqual(ascent * sign);
+    expect(Math.abs(path[path.length - 1].x - aim.x)).toBeGreaterThan(0.008);
+    expect(Math.abs(path[path.length - 1].x - ground.x)).toBeGreaterThan(0.05);
+  }
+
+  it('flares a driver and a 7-iron at 10, 20, and 40 degrees, both ways', () => {
+    for (const club of ['driver', 'iron'] as const) {
+      for (const axis of [10, 20, 40, -10, -20, -40]) {
+        assertFlares(club, axis > 0 ? -2 : 2, axis);
+      }
+    }
+  });
+
+  it('mirrors a 2° right launch with a 40° left axis against a 2° left launch with a 40° right axis', () => {
+    for (const club of ['driver', 'iron'] as const) {
+      const fade = projectFlight(flightFor(club, -2, 40).samples, portrait, tee, aim, width, height, ground);
+      const draw = projectFlight(flightFor(club, 2, -40).samples, portrait, tee, aim, width, height, ground);
+      expect(draw.length).toBe(fade.length);
+      for (let i = 0; i < fade.length; i++) {
+        expect(draw[i].t).toBeCloseTo(fade[i].t, 5);
+        expect(draw[i].y).toBeCloseTo(fade[i].y, 4);
+        expect(draw[i].x + fade[i].x).toBeCloseTo(tee.x * 2, 4);
+      }
+      const fadeOff = offsetsOf(fade);
+      const drawOff = offsetsOf(draw);
+      expect(fadeOff[fadeOff.length - 1].off).toBeGreaterThan(40);
+      expect(drawOff[drawOff.length - 1].off).toBeLessThan(-40);
+      expect(drawOff[drawOff.length - 1].off).toBeCloseTo(-fadeOff[fadeOff.length - 1].off, 1);
+    }
+  });
+});
+
 describe('tracer timing', () => {
   it('hides the line before impact, grows through the flight, and holds the landing', () => {
     expect(tracerPlayhead(1, 1.4, 6.8)).toBe(0);

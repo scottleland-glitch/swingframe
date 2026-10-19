@@ -75,6 +75,14 @@ function focalLength(fov: number, height: number): number {
   return height / 2 / Math.tan(((fov * Math.PI) / 180) / 2);
 }
 
+/** Launch direction off the aim line, from the first step that has actually left the tee. */
+function launchHeading(samples: FlightSample[]): number {
+  for (const sample of samples) {
+    if (sample.z > 0.05) return Math.atan2(sample.x, sample.z);
+  }
+  return 0;
+}
+
 function projectRaw(sample: FlightSample, frame: Frame, width: number, height: number): { x: number; y: number } | null {
   const rel = sub({ x: sample.x, y: sample.y, z: sample.z }, frame.at);
   const z = dot(rel, frame.forward);
@@ -148,12 +156,34 @@ function projectMapped(
   if (!turn) return [];
   const ballX = ball.x * width;
   const ballY = ball.y * height;
+  const heading = launchHeading(samples);
+  const headCos = Math.cos(heading);
+  const headSin = Math.sin(heading);
+  // Pixels of picture per meter off the launch line. The landing sits at its
+  // real horizontal angle. Earlier points take the same scale, so the offset
+  // follows the world curve instead of the airborne radius. That radius
+  // shrinks on the way down and was pulling a fade back toward center.
+  let curveScale = 0;
+  if (camera.view === 'dtl') {
+    const last = samples[samples.length - 1];
+    const endPixel = projectRaw({ ...last, x: 0 }, frame, width, height);
+    if (endPixel) {
+      const endX = (endPixel.x - turn.ox) * turn.cos - (endPixel.y - turn.oy) * turn.sin;
+      const endY = (endPixel.x - turn.ox) * turn.sin + (endPixel.y - turn.oy) * turn.cos;
+      const radius = Math.hypot(endX * headCos - endY * headSin, endX * headSin + endY * headCos);
+      const delta = Math.atan2(last.x, Math.max(last.z, 1e-6)) - heading;
+      const endSide = last.x * headCos - last.z * headSin;
+      if (radius > 1 && Math.abs(endSide) > 0.02 && Math.abs(delta) < 1.2) {
+        curveScale = (radius * Math.tan(delta)) / endSide;
+      }
+    }
+  }
   const path: TracerPoint[] = [];
   for (const sample of samples) {
-    // Down the line, draw the ball at its real horizontal angle off the intended
-    // line. That angle is atan2(sideways, downrange): launch direction at the
-    // start, then whatever spin does after that. It is not solved so the stroke
-    // can pass through the aim point or the horizon.
+    // Down the line, height is the ball kept over the aim line, then turned
+    // onto the launch direction. Spin is the distance off that line. It is
+    // not solved so the stroke can pass through the aim point or the horizon.
+    // Face on keeps a plain projection of the real sample.
     const source = camera.view === 'dtl' ? { ...sample, x: 0 } : sample;
     const pixel = projectRaw(source, frame, width, height);
     if (!pixel) continue;
@@ -164,11 +194,17 @@ function projectMapped(
     let px = aimedX;
     let py = aimedY;
     if (camera.view === 'dtl') {
-      const psi = Math.atan2(sample.x, sample.z);
-      const c = Math.cos(psi);
-      const s = Math.sin(psi);
-      px = aimedX * c - aimedY * s;
-      py = aimedX * s + aimedY * c;
+      px = aimedX * headCos - aimedY * headSin;
+      py = aimedX * headSin + aimedY * headCos;
+      const len = Math.hypot(px, py);
+      const sideways = sample.x * headCos - sample.z * headSin;
+      if (len > 1 && curveScale !== 0 && sideways !== 0) {
+        const off = curveScale * sideways;
+        const rx = -py / len;
+        const ry = px / len;
+        px += rx * off;
+        py += ry * off;
+      }
     }
     path.push({ x: (ballX + px) / width, y: (ballY + py) / height, t: sample.t });
   }
@@ -265,8 +301,10 @@ function viewForGround(
  * Project the flight. The aim tap is the line from the ball to the aim point,
  * and that is the only camera yaw. Launch direction is degrees off that line:
  * a 2° left launch leaves 2° left of it, whatever the spin axis is. Spin only
- * changes the angle after that, and the landing is the last sample. It is not
- * pulled onto the aim point or the horizon. A horizon tap solves pitch, and
+ * changes the angle after that, and that bend keeps growing through the
+ * descent instead of hooking back toward the line. The landing is the last
+ * sample. It is not pulled onto the aim point or the horizon. A horizon tap
+ * solves pitch, and
  * field of view only if pitch cannot reach, so the ground straight ahead at
  * the carry distance meets that height. Its sideways position is ignored.
  */
