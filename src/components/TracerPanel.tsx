@@ -136,7 +136,7 @@ export function TracerPanel({
         type="button"
         className="btn primary"
         data-testid="tracer-screenshot"
-        disabled={reading || locked}
+        disabled={reading}
         onClick={() => fileRef.current?.click()}
       >
         {reading ? 'Reading screenshot…' : 'Foresight screenshot'}
@@ -144,7 +144,7 @@ export function TracerPanel({
       )}
       {(localNote || note) && <p className="tracer-status">{localNote || note}</p>}
       {numbersOnly && (
-      <fieldset className="tracer-lock" disabled={locked}>
+      <fieldset className="tracer-lock">
       <div className="tracer-grid">
         {FIELDS.map((field) => {
           const source = shot.sources[field.key];
@@ -282,8 +282,8 @@ export function TracerPanel({
       </div>
       <p className="panel-hint">
         {locked
-          ? 'Locked. The ball, aim, landing ground, impact, numbers, and camera sliders stay put until you unlock.'
-          : 'Lock freezes the tracer so nothing moves by accident.'}{' '}
+          ? 'Locked. The ball, aim, landing ground, impact, and camera sliders stay put until you unlock. Launch numbers stay editable.'
+          : 'Lock freezes the ball, aim, landing ground, and impact. Launch numbers stay editable.'}{' '}
         Show aim point draws the ball, the aim point, the landing ground, and the white aim line. Show tracer is the flight line. The same switches sit on the picture, including in full screen, and they are saved with this swing.
       </p>
       </>

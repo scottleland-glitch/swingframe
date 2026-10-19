@@ -996,6 +996,17 @@ textarea { resize: vertical; }
   pointer-events: auto;
   max-height: min(42dvh, 380px);
 }
+.tool-backdrop.is-numbers {
+  z-index: 24;
+  opacity: 1;
+}
+.tool-backdrop.is-numbers .tool-panel {
+  opacity: 1;
+  background: #1c1c1e;
+}
+.player-screen:has(.tool-backdrop.is-numbers) .gesture-chip {
+  display: none;
+}
 .tracer-lock {
   border: 0;
   margin: 0;

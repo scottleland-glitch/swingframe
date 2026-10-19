@@ -1730,7 +1730,7 @@ export function PlayerView({
 
       {numbersOpen && (
         <div
-          className="tool-backdrop is-tracer"
+          className="tool-backdrop is-tracer is-numbers"
           data-testid="numbers-backdrop"
           onPointerDown={(event) => {
             if (event.target === event.currentTarget) setNumbersOpen(false);
