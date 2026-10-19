@@ -42,7 +42,8 @@ export type IconName =
   | 'numbers'
   | 'shapeDraw'
   | 'shapeStraight'
-  | 'shapeFade';
+  | 'shapeFade'
+  | 'restart';
 
 export function Icon({ name }: { name: IconName }) {
   return (
@@ -305,6 +306,13 @@ function paths(name: IconName) {
       return <path d="M12 20C13 14 13 9 12 4" />;
     case 'shapeFade':
       return <path d="M16 20C8 16 6 10 14 4" />;
+    case 'restart':
+      return (
+        <>
+          <path d="M20 12a8 8 0 1 1-2.2-5.6" />
+          <path d="M20 4v5h-5" />
+        </>
+      );
     default: {
       const never: never = name;
       return never;

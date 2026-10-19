@@ -46,6 +46,49 @@ export function setupStep(tracer: TracerCalibration): SetupPhase {
   return 'edit';
 }
 
+/** The step before this one. Aim is the start, so it has no previous step. */
+export function previousStep(phase: SetupPhase, mode: TracerCalibration['mode']): SetupPhase | null {
+  switch (phase) {
+    case 'ball':
+      return 'aim';
+    case 'horizon':
+      return 'ball';
+    case 'start':
+      return 'aim';
+    case 'apex':
+      return 'start';
+    case 'finish':
+      return 'apex';
+    case 'impact':
+      return mode === 'manual' ? 'finish' : 'horizon';
+    case 'lock':
+      return 'impact';
+    case 'edit':
+      return mode === 'manual' ? 'finish' : 'horizon';
+    default:
+      return null;
+  }
+}
+
+/** Clears the placed tracer points so guided setup can begin again at aim. Launch numbers stay. */
+export function resetSetup(tracer: TracerCalibration): TracerCalibration {
+  return {
+    ...tracer,
+    ball: null,
+    target: null,
+    aimSuggested: false,
+    ground: null,
+    manualStart: null,
+    manualApex: null,
+    manualFinish: null,
+    shape: null,
+    mode: undefined,
+    impactTime: null,
+    setupDone: false,
+    locked: false,
+  };
+}
+
 /** A starting ball near the toes, or the lower middle of the frame. */
 export function ballGuess(feet: ToeLine | null): Pt {
   if (!feet) return { x: 0.5, y: 0.72 };

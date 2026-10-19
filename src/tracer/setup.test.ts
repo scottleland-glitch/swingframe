@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyShot } from './flight';
 import { defaultTracer } from './project';
-import { ballGuess, launchIsSet, setupStep } from './setup';
+import { ballGuess, launchIsSet, previousStep, resetSetup, setupStep } from './setup';
 
 describe('tracer setup', () => {
   it('walks aim, then ball, then horizon, then impact, and edits a finished setup', () => {
@@ -44,6 +44,44 @@ describe('tracer setup', () => {
     });
     expect(guess.x).toBeCloseTo(0.45, 2);
     expect(guess.y).toBeCloseTo(0.71, 2);
+  });
+
+  it('steps back to the previous marker and can start over at aim', () => {
+    expect(previousStep('aim', 'data')).toBeNull();
+    expect(previousStep('ball', 'data')).toBe('aim');
+    expect(previousStep('horizon', 'data')).toBe('ball');
+    expect(previousStep('impact', 'data')).toBe('horizon');
+    expect(previousStep('lock', 'data')).toBe('impact');
+    expect(previousStep('edit', 'data')).toBe('horizon');
+    expect(previousStep('start', 'manual')).toBe('aim');
+    expect(previousStep('apex', 'manual')).toBe('start');
+    expect(previousStep('finish', 'manual')).toBe('apex');
+    expect(previousStep('impact', 'manual')).toBe('finish');
+    expect(previousStep('edit', 'manual')).toBe('finish');
+    const cleared = resetSetup({
+      ...defaultTracer(),
+      mode: 'manual',
+      shape: 'draw',
+      ball: { x: 0.4, y: 0.7 },
+      target: { x: 0.5, y: 0.3 },
+      ground: { x: 0.5, y: 0.4 },
+      manualStart: { x: 0.5, y: 0.7 },
+      manualApex: { x: 0.6, y: 0.3 },
+      manualFinish: { x: 0.45, y: 0.5 },
+      impactTime: 1.2,
+      setupDone: true,
+      locked: true,
+    });
+    expect(cleared.ball).toBeNull();
+    expect(cleared.target).toBeNull();
+    expect(cleared.ground).toBeNull();
+    expect(cleared.manualStart).toBeNull();
+    expect(cleared.manualApex).toBeNull();
+    expect(cleared.manualFinish).toBeNull();
+    expect(cleared.impactTime).toBeNull();
+    expect(cleared.mode).toBeUndefined();
+    expect(cleared.locked).toBe(false);
+    expect(setupStep(cleared)).toBe('aim');
   });
 
   it('treats any saved launch number as enough to skip the numbers sheet', () => {

@@ -696,21 +696,38 @@ textarea { resize: vertical; }
   pointer-events: none;
 }
 .setup-chrome > * { pointer-events: auto; }
-.setup-x {
-  top: calc(10px + var(--safe-top));
-  left: calc(12px + var(--safe-left));
+.setup-chrome > .setup-hint { pointer-events: none; }
+.setup-nav {
+  position: absolute;
+  z-index: 5;
+  top: calc(8px + var(--safe-top));
+  left: calc(8px + var(--safe-left));
+  display: flex;
+  gap: 8px;
 }
-.setup-back {
-  top: calc(10px + var(--safe-top));
-  left: calc(56px + var(--safe-left));
+.setup-nav-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgba(20, 20, 20, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
+.setup-nav-btn .icon { width: 22px; height: 22px; }
+.setup-nav-btn:disabled { opacity: 0.35; }
 .setup-hint {
   position: absolute;
   left: 50%;
-  top: calc(14px + var(--safe-top));
+  top: calc(60px + var(--safe-top));
   transform: translateX(-50%);
   margin: 0;
-  max-width: calc(100% - 140px);
+  max-width: calc(100% - 32px);
   padding: 6px 12px;
   border-radius: 999px;
   background: rgba(20, 20, 20, 0.55);
@@ -740,6 +757,59 @@ textarea { resize: vertical; }
   font-size: 15px;
 }
 .setup-impact .icon { width: 18px; height: 18px; }
+.setup-impact-stack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: calc(8px + var(--safe-bottom));
+}
+.setup-impact-stack .setup-impact {
+  position: static;
+  transform: none;
+}
+.setup-transport {
+  align-self: stretch;
+  background: #fff;
+  color: #111;
+}
+.setup-transport .scrubber.slim { height: 44px; }
+.setup-transport .scrubber-track {
+  background: rgba(0, 0, 0, 0.16);
+  top: 20px;
+  height: 4px;
+}
+.setup-transport .scrubber-fill { background: #111; }
+.setup-transport .scrubber-thumb {
+  width: 22px;
+  height: 22px;
+  top: 11px;
+  margin-left: -11px;
+  background: #111;
+}
+.setup-transport-row {
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+  padding: 0 12px 4px;
+}
+.setup-transport-row .bar-icon {
+  flex: none;
+  width: 44px;
+  max-width: none;
+  height: 44px;
+  min-height: 44px;
+  color: #111;
+}
+.player-screen.is-setup-impact .manual-pill,
+.player-screen.is-immersive.is-setup-impact .manual-pill {
+  bottom: calc(168px + var(--safe-bottom));
+}
 .manual-pill {
   position: absolute;
   z-index: 2;

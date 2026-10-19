@@ -1239,17 +1239,18 @@ export const VideoStage = forwardRef<
       data-testid="stage"
       onContextMenu={(event) => event.preventDefault()}
       onPointerDown={(event) => {
-        if (!calibrateRef.current && setupMarkerRef.current) {
-          event.currentTarget.setPointerCapture(event.pointerId);
-          setupDragRef.current = { x: event.clientX, y: event.clientY, moved: false, which: null };
-          return;
-        }
         if (!calibrateRef.current && editMarkersRef.current) {
           const which = editHit(event.clientX, event.clientY);
           if (which) {
             event.currentTarget.setPointerCapture(event.pointerId);
             setupDragRef.current = { x: event.clientX, y: event.clientY, moved: false, which };
+            return;
           }
+          if (!setupMarkerRef.current) return;
+        }
+        if (!calibrateRef.current && setupMarkerRef.current) {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setupDragRef.current = { x: event.clientX, y: event.clientY, moved: false, which: null };
           return;
         }
         if (freezeDrawRef.current) return;

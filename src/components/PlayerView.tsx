@@ -15,7 +15,7 @@ import { detectFeet, frameAtTime } from '../tracer/pose';
 import { defaultTracer, projectFlight } from '../tracer/project';
 import { manualTrace, shapePoints } from '../tracer/manualTrace';
 import type { TracerMarks } from '../tracer/paintTracer';
-import { ballGuess, launchIsSet, setupStep, type SetupPhase } from '../tracer/setup';
+import { ballGuess, launchIsSet, previousStep, resetSetup, setupStep, type SetupPhase } from '../tracer/setup';
 import { clipEndTime, holdSpan, nextHold, playClock, tracerPlayhead } from '../tracer/timing';
 import type { Drawing, Pt, ShotData, ShotShape, SwingMeta, Tool, TracerCalibration } from '../types';
 import { useSwing } from '../useSwing';
@@ -38,6 +38,37 @@ const HINTS: Record<Tool, string> = {
   vline: 'Two fingers place the plumb line.',
   erase: 'Tap a drawing to remove it.',
 };
+
+function keptMarkers(cal: TracerCalibration, phase: SetupPhase) {
+  if (phase === 'edit') {
+    if (cal.mode === 'manual') {
+      return {
+        ball: null,
+        target: null,
+        ground: null,
+        start: cal.manualStart ?? null,
+        apex: cal.manualApex ?? null,
+        finish: cal.manualFinish ?? null,
+      };
+    }
+    return { ball: cal.ball, target: cal.target, ground: cal.ground ?? null };
+  }
+  if (cal.mode === 'manual') {
+    return {
+      ball: null,
+      target: null,
+      ground: null,
+      start: phase === 'start' ? null : cal.manualStart ?? null,
+      apex: phase === 'apex' ? null : cal.manualApex ?? null,
+      finish: phase === 'finish' ? null : cal.manualFinish ?? null,
+    };
+  }
+  return {
+    ball: phase === 'ball' ? null : cal.ball,
+    target: phase === 'aim' || cal.aimSuggested === true ? null : cal.target,
+    ground: phase === 'horizon' ? null : cal.ground ?? null,
+  };
+}
 
 function showAimMarks(cal: TracerCalibration): TracerMarks | null {
   if (cal.showAim !== true) return null;
@@ -821,16 +852,20 @@ export function PlayerView({
   );
 
   const setupBack = useCallback(() => {
+    if (calRef.current.locked) return;
     const phase = setupPhaseRef.current;
-    if (phase === 'ball') enterStep('aim');
-    else if (phase === 'horizon') enterStep('ball');
-    else if (phase === 'apex') enterStep('start');
-    else if (phase === 'finish') enterStep('apex');
-    else if (phase === 'start') {
-      rememberTracer(shotRef.current, { ...calRef.current, mode: 'data' }, true);
-      enterStep('aim');
-    } else if (phase === 'impact') enterStep(calRef.current.mode === 'manual' ? 'finish' : 'horizon');
-    else if (phase === 'lock') enterStep('impact');
+    if (!phase) return;
+    if (phase === 'start') rememberTracer(shotRef.current, { ...calRef.current, mode: 'data' }, true);
+    const next = previousStep(phase, calRef.current.mode);
+    if (next) enterStep(next);
+  }, [enterStep, rememberTracer]);
+
+  const startOver = useCallback(() => {
+    if (calRef.current.locked) return;
+    aimEpoch.current += 1;
+    setAimGuides(null);
+    rememberTracer(shotRef.current, resetSetup(calRef.current), true);
+    enterStep('aim');
   }, [enterStep, rememberTracer]);
 
   const playTracer = useCallback(() => {
@@ -1218,20 +1253,7 @@ export function PlayerView({
               : null
           }
           onSetupGesture={onSetupGesture}
-          editMarkers={
-            setupPhase === 'edit'
-              ? activeCal.mode === 'manual'
-                ? {
-                    ball: null,
-                    target: null,
-                    ground: null,
-                    start: activeCal.manualStart ?? null,
-                    apex: activeCal.manualApex ?? null,
-                    finish: activeCal.manualFinish ?? null,
-                  }
-                : { ball: activeCal.ball, target: activeCal.target, ground: activeCal.ground ?? null }
-              : null
-          }
+          editMarkers={setupPhase ? keptMarkers(activeCal, setupPhase) : null}
           onEditGesture={onEditGesture}
           freezeDraw={setupPhase != null}
           tracerPath={
@@ -1258,23 +1280,65 @@ export function PlayerView({
 
       {setupPhase && (
         <div className="setup-chrome">
-          <button type="button" className="float-btn setup-x" aria-label="Cancel setup" data-testid="setup-cancel" onClick={leaveSetup}>
-            <Icon name="close" />
-          </button>
-          {setupPhase !== 'aim' && setupPhase !== 'edit' && (
-            <button type="button" className="float-btn setup-back" aria-label="Previous step" data-testid="setup-back" onClick={setupBack}>
-              <Icon name="back" />
+          <div className="setup-nav">
+            <button type="button" className="setup-nav-btn" aria-label="Cancel setup" data-testid="setup-cancel" onClick={leaveSetup}>
+              <Icon name="close" />
             </button>
-          )}
+            <button
+              type="button"
+              className="setup-nav-btn"
+              aria-label="Back"
+              data-testid="setup-back"
+              disabled={activeCal.locked === true || previousStep(setupPhase, activeCal.mode) == null}
+              onClick={setupBack}
+            >
+              <Icon name="undo" />
+            </button>
+            <button
+              type="button"
+              className="setup-nav-btn"
+              aria-label="Start over"
+              data-testid="setup-start-over"
+              disabled={activeCal.locked === true}
+              onClick={startOver}
+            >
+              <Icon name="restart" />
+            </button>
+          </div>
           {setupHint && (
             <p className="setup-hint" data-testid="setup-hint">
               {setupHint}
             </p>
           )}
           {setupPhase === 'impact' && activeCal.locked !== true && (
-            <button type="button" className="setup-impact" data-testid="set-impact-setup" onClick={markImpact}>
-              Set impact time
-            </button>
+            <div className="setup-impact-stack" data-testid="impact-transport">
+              <button type="button" className="setup-impact" data-testid="set-impact-setup" onClick={markImpact}>
+                Set impact time
+              </button>
+              <div
+                className="setup-transport"
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <Scrubber className="slim" value={clock.time} max={clock.duration} onScrub={scrub} testId="impact-scrubber" />
+                <div className="setup-transport-row">
+                  <button type="button" className="bar-icon" aria-label="Previous frame" data-testid="impact-back" onClick={() => step(-1)}>
+                    <Icon name="stepBack" />
+                  </button>
+                  <button
+                    type="button"
+                    className="bar-icon bar-play"
+                    aria-label={showPaused ? 'Play' : 'Pause'}
+                    data-testid="impact-play"
+                    onClick={() => void toggle()}
+                  >
+                    <Icon name={showPaused ? 'play' : 'pause'} />
+                  </button>
+                  <button type="button" className="bar-icon" aria-label="Next frame" data-testid="impact-forward" onClick={() => step(1)}>
+                    <Icon name="stepForward" />
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
           {setupPhase === 'lock' && (
             <button type="button" className="setup-impact" data-testid="setup-lock" onClick={commitLock}>
@@ -1308,17 +1372,6 @@ export function PlayerView({
                   </button>
                 ))}
             </div>
-          )}
-          {setupPhase === 'edit' && (
-            <button
-              type="button"
-              className="setup-redo"
-              data-testid="redo-setup"
-              disabled={activeCal.locked === true}
-              onClick={() => beginSetup(true)}
-            >
-              Redo setup
-            </button>
           )}
         </div>
       )}
@@ -1771,7 +1824,7 @@ export function PlayerView({
           <div className="sheet-body">
             <p className="tip">
               The video stays on this page. Tap the pencil for drawing tools. Place a drawing with two fingers. Undo is on the white bar, and Clear all is in the drawing menu.
-              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon walks through aim, ball, and horizon. Manual trace, at the bottom left, draws a flight through start, apex, and finish. Scrub to the hit, tap Set impact time, then Lock. Lock opens launch numbers only when they are still empty. A manual trace never asks for numbers. Redo setup lets you pick either. The 123 icon opens the numbers any time. Clear tracer removes the line. Undo puts it back.
+              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon walks through aim, ball, and horizon. Manual trace, at the bottom left, draws a flight through start, apex, and finish. On Set impact time, the scrubber and frame step sit along the bottom. The undo arrow steps back, and the round arrow starts setup over. Circles you already placed stay on the picture and can be dragged. Then Lock. Lock opens launch numbers only when they are still empty. A manual trace never asks for numbers. After Lock, unlock with the pill, then start over if you want the other setup. The 123 icon opens the numbers any time. Clear tracer removes the line. Undo puts it back.
             </p>
             {swing.notes ? <p className="note-block">{swing.notes}</p> : null}
             <div className="fps-row" role="group" aria-label="Frame step size">
