@@ -1393,9 +1393,9 @@ textarea { resize: vertical; }
 }
 
 .welcome {
-  position: fixed;
-  inset: 0;
+  position: relative;
   overflow: hidden;
+  height: 100dvh;
   background: #0b1424;
   color: #f4f7fb;
 }
@@ -1429,7 +1429,7 @@ textarea { resize: vertical; }
 .welcome-head {
   position: absolute;
   z-index: 2;
-  top: calc(22px + var(--safe-top));
+  top: calc(4px + var(--safe-top));
   left: calc(20px + var(--safe-left));
   right: calc(78px + var(--safe-right));
 }
@@ -1442,7 +1442,10 @@ textarea { resize: vertical; }
   line-height: 1;
 }
 .welcome-sub {
-  margin: 8px 0 0;
+  position: fixed;
+  left: calc(20px + var(--safe-left));
+  bottom: calc(34px + var(--safe-bottom));
+  margin: 0;
   font-family: "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 13px;
   font-weight: 400;
@@ -1450,7 +1453,10 @@ textarea { resize: vertical; }
   color: rgba(244, 247, 251, 0.72);
 }
 .welcome-version {
-  margin: 12px 0 0;
+  position: fixed;
+  left: calc(20px + var(--safe-left));
+  bottom: calc(14px + var(--safe-bottom));
+  margin: 0;
   font-family: "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 11px;
   font-weight: 500;
