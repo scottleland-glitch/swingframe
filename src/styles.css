@@ -1395,33 +1395,34 @@ textarea { resize: vertical; }
 .welcome {
   position: relative;
   overflow: hidden;
+  height: 100dvh;
   background: #0b1424;
   color: #f4f7fb;
 }
 .welcome-hero {
   position: absolute;
   z-index: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   width: 100%;
-  max-height: 78%;
-  object-fit: contain;
-  object-position: center bottom;
+  height: 100%;
+  object-fit: cover;
+  /* The pair is wider than a phone. Cover crops the outer edges; keep the divider in the middle. */
+  object-position: center center;
   pointer-events: none;
   user-select: none;
 }
 .welcome-fade {
   position: absolute;
   z-index: 1;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28%;
   background: linear-gradient(
     180deg,
-    #0b1424 0%,
-    #0b1424 26%,
-    rgba(11, 20, 36, 0.94) 44%,
-    rgba(11, 20, 36, 0.4) 62%,
-    rgba(11, 20, 36, 0) 76%
+    rgba(11, 20, 36, 0.55) 0%,
+    rgba(11, 20, 36, 0.22) 52%,
+    rgba(11, 20, 36, 0) 100%
   );
   pointer-events: none;
 }
@@ -1455,7 +1456,7 @@ textarea { resize: vertical; }
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(244, 247, 251, 0.42);
+  color: rgba(244, 247, 251, 0.72);
 }
 .welcome-actions {
   position: absolute;
