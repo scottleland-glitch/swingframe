@@ -784,7 +784,15 @@ textarea { resize: vertical; }
   position: static;
   transform: none;
   margin-bottom: 2px;
+  min-height: 44px;
+  padding: 0 22px;
+  background: #111;
+  color: #fff;
+  -webkit-appearance: none;
+  appearance: none;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.16) inset, 0 6px 16px rgba(0, 0, 0, 0.22);
 }
+.setup-playback .setup-impact .icon { color: #fff; }
 .setup-transport {
   align-self: stretch;
   background: #fff;
