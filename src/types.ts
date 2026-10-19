@@ -68,6 +68,12 @@ export interface TracerCalibration {
   aimSuggested?: boolean;
   /** A spot on the ground near where the ball lands, in video coordinates. Sets the landing height, not the sideways finish. */
   ground?: Pt | null;
+  /**
+   * When set, `ground` is a flag at this many yards, and the camera is solved
+   * from that instead of from this shot's carry. Null means the pin is where
+   * this shot lands.
+   */
+  referenceYards?: number | null;
   /** Impact, in seconds of the video. Null until it is detected or marked. */
   impactTime: number | null;
   /** Tripod height, meters. */

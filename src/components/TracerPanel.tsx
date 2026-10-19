@@ -101,7 +101,7 @@ export function TracerPanel({
       <h2>{numbersOnly ? 'Launch' : 'Tracer'}</h2>
       {!numbersOnly && (
         <p className="panel-hint">
-          {view === 'face' ? 'Face On.' : 'Down the Line.'} Place the aim, ball, and horizon with the tracer button, or Manual trace for a drawn flight. Lock is the last setup step. Launch numbers are the 123 button.
+          {view === 'face' ? 'Face On.' : 'Down the Line.'} Place the aim, ball, and landing pin with the tracer button, or Manual trace for a drawn flight. The pin is where this shot would land. Lock is the last setup step. Launch numbers are the 123 button.
         </p>
       )}
       <input

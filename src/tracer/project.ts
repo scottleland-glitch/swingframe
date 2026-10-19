@@ -292,7 +292,7 @@ function viewForGround(
   };
 
   const pitched = refine(-1.05, 1.25, (phi) => yAt(phi, camera.fov), cameraPitch(camera, ball.y));
-  if (pitched.err <= 0.008) return { pitch: pitched.value, fov: camera.fov };
+  if (pitched.err <= 0.004) return { pitch: pitched.value, fov: camera.fov };
   const opened = refine(15, 110, (fov) => yAt(pitched.value, fov), camera.fov);
   return { pitch: pitched.value, fov: opened.err < pitched.err ? opened.value : camera.fov };
 }
@@ -303,10 +303,11 @@ function viewForGround(
  * a 2° left launch leaves 2° left of it, whatever the spin axis is. Spin only
  * changes the angle after that, and that bend keeps growing through the
  * descent instead of hooking back toward the line. The landing is the last
- * sample. It is not pulled onto the aim point or the horizon. A horizon tap
- * solves pitch, and
- * field of view only if pitch cannot reach, so the ground straight ahead at
- * the carry distance meets that height. Its sideways position is ignored.
+ * sample. It is not pulled onto the aim point or the landing pin. A landing
+ * tap solves pitch, and field of view only if pitch cannot reach, so the
+ * ground straight ahead at the carry distance meets that height. A known
+ * yardage flag passes its own distance instead of the carry. The pin's
+ * sideways position is ignored.
  */
 export function projectFlight(
   samples: FlightSample[],
@@ -316,13 +317,15 @@ export function projectFlight(
   width: number,
   height: number,
   ground?: Pt | null,
+  depthMeters?: number | null,
 ): TracerPoint[] {
   if (samples.length < 2 || width < 2 || height < 2) return [];
   const carry = samples[samples.length - 1]?.z ?? 0;
-  if (!ground || !Number.isFinite(ground.y) || !(carry > 1)) {
+  const depth = depthMeters != null && depthMeters > 1 ? depthMeters : carry;
+  if (!ground || !Number.isFinite(ground.y) || !(depth > 1)) {
     return projectMapped(samples, camera, cameraFrame(camera, ball.y), ball, target, width, height);
   }
-  const solved = viewForGround(carry, camera, ball, target, width, height, ground.y);
+  const solved = viewForGround(depth, camera, ball, target, width, height, ground.y);
   const tuned = { ...camera, fov: solved.fov };
   return projectMapped(samples, tuned, cameraFrame(tuned, ball.y, solved.pitch), ball, target, width, height);
 }
@@ -333,6 +336,7 @@ export function defaultTracer(): TracerCalibration {
     target: null,
     aimSuggested: false,
     ground: null,
+    referenceYards: null,
     impactTime: null,
     cameraHeight: 1.4,
     cameraDistance: 3.5,

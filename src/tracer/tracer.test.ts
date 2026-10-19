@@ -688,6 +688,74 @@ describe('descent keeps bending away from the start line', () => {
   });
 });
 
+describe('landing spot sets the carry depth', () => {
+  const portrait = { view: 'dtl' as const, height: 1.4, distance: 3.5, fov: 60 };
+  const tee = { x: 0.5, y: 0.78 };
+  const aim = { x: 0.5, y: 0.28 };
+  const width = 1080;
+  const height = 1920;
+
+  function carry(club: 'driver' | 'iron' | 'wedge') {
+    if (club === 'driver') return simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, spin: 2500 })!;
+    if (club === 'iron') return simulateShot({ ...emptyShot(), ballSpeed: 120, vla: 16, spin: 7000 })!;
+    return simulateShot({ ...emptyShot(), ballSpeed: 100, vla: 30, spin: 9000 })!;
+  }
+
+  it('puts the drawn landing on the pin for a driver, a 7-iron, and a wedge', () => {
+    for (const club of ['driver', 'iron', 'wedge'] as const) {
+      const flight = carry(club);
+      expect(flight.samples.at(-1)?.z).toBeGreaterThan(80);
+      for (const y of [0.34, 0.46, 0.58]) {
+        const path = projectFlight(flight.samples, portrait, tee, aim, width, height, { x: 0.18, y });
+        expect(Math.abs(path.at(-1)!.y - y)).toBeLessThan(0.01);
+      }
+    }
+  });
+
+  it('keeps a driver apex well above that landing from the tripod', () => {
+    const flight = carry('driver');
+    const apexM = flight.samples.reduce((best, sample) => Math.max(best, sample.y), 0);
+    expect(apexM).toBeGreaterThan(20);
+    expect(apexM).toBeLessThan(36);
+    expect(flight.samples.at(-1)!.z).toBeGreaterThan(200);
+    expect(flight.samples.at(-1)!.z).toBeLessThan(280);
+    expect(portrait.height).toBe(1.4);
+    expect(portrait.distance).toBe(3.5);
+    const path = projectFlight(flight.samples, portrait, tee, aim, width, height, { x: 0.7, y: 0.46 });
+    let apex = 0;
+    for (let i = 1; i < path.length; i++) if (path[i].y < path[apex].y) apex = i;
+    expect(path.at(-1)!.y).toBeCloseTo(0.46, 2);
+    expect(path.at(-1)!.y - path[apex].y).toBeGreaterThan(0.15);
+  });
+
+  it('solves a known yardage flag without moving this shot onto that pin', () => {
+    const flight = carry('driver');
+    const pin = { x: 0.4, y: 0.5 };
+    const yards = 20;
+    const depth = yards * 0.9144;
+    const at = (z: number) =>
+      projectFlight(
+        [
+          { t: 0, x: 0, y: 0, z: 0 },
+          { t: 1, x: 0, y: 0, z },
+        ],
+        portrait,
+        tee,
+        aim,
+        width,
+        height,
+        pin,
+        depth,
+      );
+    expect(Math.abs(at(depth).at(-1)!.y - pin.y)).toBeLessThan(0.01);
+    // A closer patch of ground stays below the flag. The driver, past it, sits above.
+    expect(at(8 * 0.9144).at(-1)!.y).toBeGreaterThan(pin.y + 0.03);
+    const shot = projectFlight(flight.samples, portrait, tee, aim, width, height, pin, depth);
+    expect(flight.samples.at(-1)!.z).toBeGreaterThan(depth + 80);
+    expect(shot.at(-1)!.y).toBeLessThan(pin.y - 0.02);
+  });
+});
+
 describe('tracer timing', () => {
   it('hides the line before impact, grows through the flight, and holds the landing', () => {
     expect(tracerPlayhead(1, 1.4, 6.8)).toBe(0);
