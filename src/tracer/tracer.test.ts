@@ -296,6 +296,47 @@ function imageRays(path: TracerPoint[], ball: Pt, target: Pt, width: number, hei
   });
 }
 
+/** Degrees off the ball-to-aim line. Positive is right. Skips the point on the ball. */
+function positionAngles(path: TracerPoint[], ball: Pt, target: Pt, width: number, height: number): number[] {
+  return imageRays(path, ball, target, width, height).flatMap((ray) => {
+    if (Math.hypot(ray.across, ray.along) < 4) return [];
+    return [(Math.atan2(ray.across, ray.along) * 180) / Math.PI];
+  });
+}
+
+function risesThenFalls(path: TracerPoint[], height: number) {
+  expect(path.length).toBeGreaterThan(20);
+  let apex = 0;
+  for (let i = 1; i < path.length; i++) if (path[i].y < path[apex].y) apex = i;
+  expect(apex).toBeGreaterThan(path.length * 0.15);
+  expect(apex).toBeLessThan(path.length * 0.85);
+  const slack = 2 / height;
+  for (let i = 1; i <= apex; i++) expect(path[i].y).toBeLessThanOrEqual(path[i - 1].y + slack);
+  for (let i = apex + 1; i < path.length; i++) expect(path[i].y).toBeGreaterThanOrEqual(path[i - 1].y - slack);
+}
+
+/** Proper crossings only. A straight ray that climbs and comes back down overlaps itself and does not count. */
+function properCrossings(path: TracerPoint[]): number {
+  const orient = (a: TracerPoint, b: TracerPoint, c: TracerPoint) =>
+    Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+  let hits = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    for (let j = i + 2; j < path.length - 1; j++) {
+      const a = path[i];
+      const b = path[i + 1];
+      const c = path[j];
+      const d = path[j + 1];
+      const o1 = orient(a, b, c);
+      const o2 = orient(a, b, d);
+      const o3 = orient(c, d, a);
+      const o4 = orient(c, d, b);
+      if (o1 === 0 || o2 === 0 || o3 === 0 || o4 === 0) continue;
+      if (o1 !== o2 && o3 !== o4) hits++;
+    }
+  }
+  return hits;
+}
+
 describe('camera projection', () => {
   const samples = driver()!.samples;
   const defaults = defaultTracer();
@@ -388,10 +429,10 @@ describe('camera projection', () => {
     expect(wedgeAlong).toBeLessThan(driverAlong);
   });
 
-  it('draws a fade as a curve off the start line, not a tilted straight stroke', () => {
+  it('curves a fade off the launch line without bending the start back toward a landing spot', () => {
     const fade = simulateShot({ ...emptyShot(), ballSpeed: 155, vla: 14, hla: -3, spin: 2800, spinAxis: 4 })!;
+    const push = simulateShot({ ...emptyShot(), ballSpeed: 155, vla: 14, hla: -3, spin: 2800, spinAxis: 0 })!;
     const straight = driver(0, 0)!;
-    const push = simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, hla: -3, spin: 2500, spinAxis: 0 })!;
     const portrait = { view: 'dtl' as const, height: 1.4, distance: 3.5, fov: 60 };
     const tee = { x: 0.5, y: 0.78 };
     const aim = { x: 0.5, y: 0.32 };
@@ -403,18 +444,6 @@ describe('camera projection', () => {
 
     expect(fadePath.length).toBeGreaterThan(120);
     expect(lineDeviation(straightPath, width, height)).toBeLessThan(2);
-    expect(lineDeviation(fadePath, width, height)).toBeGreaterThan(50);
-
-    const fadeRays = imageRays(fadePath, tee, aim, width, height);
-    const started = fadeRays.find((ray) => ray.t >= 0.25)!;
-    expect(started.across).toBeLessThan(-40);
-    expect(started.across).toBeGreaterThan(-180);
-    const landing = fadeRays.at(-1)!;
-    const leftmost = Math.min(...fadeRays.map((ray) => ray.across));
-    expect(landing.across).toBeLessThan(-8);
-    expect(landing.across).toBeGreaterThan(leftmost + 60);
-    expect(fadePath.every((point) => point.x > 0.05 && point.x < 0.95 && point.y > 0.05 && point.y < 0.98)).toBe(true);
-
     const straightRays = imageRays(straightPath, tee, aim, width, height);
     expect(Math.abs(straightRays.at(-1)!.across)).toBeLessThan(1.5);
     expect(Math.max(...straightRays.map((ray) => ray.along))).toBeGreaterThan(straightRays.at(-1)!.along + 20);
@@ -423,16 +452,27 @@ describe('camera projection', () => {
     expect(straightLanding.y).toBeLessThan(tee.y - 0.1);
     expect(Math.min(...straightPath.map((point) => point.y))).toBeLessThan(straightLanding.y - 0.05);
 
-    expect(push.curveYd).toBeLessThan(-11);
-    expect(push.curveYd).toBeGreaterThan(-16);
-    const pushLanding = imageRays(pushPath, tee, aim, width, height).at(-1)!;
-    const hFov = 2 * Math.atan(Math.tan(((60 * Math.PI) / 180) / 2) * (width / height));
-    const degrees = (pushLanding.across / width) * ((hFov * 180) / Math.PI);
-    expect(degrees).toBeLessThan(-2);
-    expect(degrees).toBeGreaterThan(-4.5);
+    const fadeAngles = positionAngles(fadePath, tee, aim, width, height);
+    const pushAngles = positionAngles(pushPath, tee, aim, width, height);
+    expect(fadeAngles[0]).toBeCloseTo(-3, 1);
+    expect(pushAngles[0]).toBeCloseTo(fadeAngles[0], 1);
+    expect(Math.max(...pushAngles) - Math.min(...pushAngles)).toBeLessThan(0.6);
+    expect(pushAngles.at(-1)!).toBeLessThan(-1.5);
+    for (let i = 1; i < fadeAngles.length; i++) {
+      expect(fadeAngles[i]).toBeGreaterThanOrEqual(fadeAngles[i - 1] - 0.03);
+    }
+    expect(fadeAngles.at(-1)!).toBeGreaterThan(fadeAngles[0] + 0.4);
+    expect(Math.abs(fadePath.at(-1)!.x - aim.x)).toBeGreaterThan(0.005);
+    expect(fadePath.every((point) => point.x > 0.02 && point.x < 0.98 && point.y > 0.02 && point.y < 0.98)).toBe(true);
+
+    expect(push.curveYd).toBeLessThan(-8);
+    expect(push.curveYd).toBeGreaterThan(-20);
+    const pushLanding = positionAngles(pushPath, tee, aim, width, height).at(-1)!;
+    expect(pushLanding).toBeLessThan(-2);
+    expect(pushLanding).toBeGreaterThan(-4.5);
   });
 
-  it('puts the landing on the tapped ground height without pinning its sideways finish', () => {
+  it('puts the straight carry on the tapped ground height without moving the sideways finish', () => {
     const straight = driver(0, 0)!;
     const fade = driver(8)!;
     const draw = driver(-8)!;
@@ -447,10 +487,12 @@ describe('camera projection', () => {
     expect(untouched.at(-1)!.y).not.toBeCloseTo(ground.y, 2);
     const fadePath = projectFlight(fade.samples, camera, tee, aim, width, height, ground);
     const drawPath = projectFlight(draw.samples, camera, tee, aim, width, height, ground);
-    expect(Math.abs(fadePath.at(-1)!.y - ground.y)).toBeLessThan(0.02);
-    expect(Math.abs(drawPath.at(-1)!.y - ground.y)).toBeLessThan(0.02);
-    expect(Math.abs(fadePath.at(-1)!.x - drawPath.at(-1)!.x)).toBeGreaterThan(0.015);
+    const fadeElsewhere = projectFlight(fade.samples, camera, tee, aim, width, height, { x: 0.9, y: ground.y });
+    expect(fadeElsewhere).toEqual(fadePath);
+    expect(Math.abs(fadePath.at(-1)!.x - drawPath.at(-1)!.x)).toBeGreaterThan(0.008);
     expect(Math.abs(fadePath.at(-1)!.x - ground.x)).toBeGreaterThan(0.05);
+    expect(Math.abs(fadePath.at(-1)!.x - aim.x)).toBeGreaterThan(0.004);
+    expect(Math.abs(drawPath.at(-1)!.x - aim.x)).toBeGreaterThan(0.004);
     const straightRays = imageRays(tuned, tee, aim, width, height);
     expect(Math.abs(straightRays.at(-1)!.across)).toBeLessThan(2);
     expect(projectFlight(straight.samples, camera, tee, aim, width, height, null)).toEqual(untouched);
@@ -463,6 +505,72 @@ describe('camera projection', () => {
       return Math.hypot((apex.x - ball.x) * width, (apex.y - ball.y) * height);
     };
     expect(span(75)).toBeLessThan(span(40));
+  });
+});
+
+describe('launch line with a horizon tap', () => {
+  const portrait = { view: 'dtl' as const, height: 1.4, distance: 3.5, fov: 60 };
+  const tee = { x: 0.5, y: 0.72 };
+  const aim = { x: 0.5, y: 0.28 };
+  // The sideways part of the tap is a decoy. It must not become the landing.
+  const ground = { x: 0.82, y: 0.55 };
+  const width = 1080;
+  const height = 1920;
+
+  function shot(spinAxis: number) {
+    return simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, hla: -2, spin: 2800, spinAxis })!;
+  }
+
+  function project(spinAxis: number, groundPoint: Pt = ground) {
+    return projectFlight(shot(spinAxis).samples, portrait, tee, aim, width, height, groundPoint);
+  }
+
+  it('keeps a 2° left launch left of the aim line, with no curve back, when the axis is zero', () => {
+    const path = project(0);
+    const angles = positionAngles(path, tee, aim, width, height);
+    expect(angles[0]).toBeCloseTo(-2, 1);
+    expect(Math.max(...angles)).toBeLessThan(-1);
+    expect(Math.max(...angles) - Math.min(...angles)).toBeLessThan(0.5);
+    expect(angles.at(-1)!).toBeLessThanOrEqual(angles[0] + 0.15);
+    expect(Math.abs(path.at(-1)!.x - aim.x)).toBeGreaterThan(0.008);
+    expect(Math.abs(path.at(-1)!.x - ground.x)).toBeGreaterThan(0.05);
+    risesThenFalls(path, height);
+  });
+
+  it('starts a 10° right axis on that same line and curves only to the right', () => {
+    const straight = positionAngles(project(0), tee, aim, width, height);
+    const path = project(10);
+    const fade = positionAngles(path, tee, aim, width, height);
+    expect(fade[0]).toBeCloseTo(-2, 1);
+    expect(fade[0]).toBeCloseTo(straight[0], 1);
+    expect(fade[0]).toBeGreaterThan(straight[0] - 0.08);
+    for (let i = 1; i < fade.length; i++) {
+      expect(fade[i]).toBeGreaterThanOrEqual(fade[i - 1] - 0.03);
+    }
+    expect(fade.at(-1)!).toBeGreaterThan(fade[0] + 0.5);
+    expect(Math.abs(path.at(-1)!.x - aim.x)).toBeGreaterThan(0.008);
+    expect(Math.abs(path.at(-1)!.x - ground.x)).toBeGreaterThan(0.05);
+    risesThenFalls(path, height);
+    expect(properCrossings(path)).toBe(0);
+  });
+
+  it('keeps the same initial direction when the spin axis or the horizon tap changes', () => {
+    const base = positionAngles(project(0), tee, aim, width, height)[0];
+    for (const axis of [-20, -10, 5, 10, 20]) {
+      expect(positionAngles(project(axis), tee, aim, width, height)[0]).toBeCloseTo(base, 1);
+    }
+    const tiltedAim = { x: 0.68, y: 0.4 };
+    const tilted = positionAngles(
+      projectFlight(shot(10).samples, portrait, tee, tiltedAim, width, height, ground),
+      tee,
+      tiltedAim,
+      width,
+      height,
+    )[0];
+    expect(tilted).toBeCloseTo(-2, 1);
+    const higher = positionAngles(project(10, { x: 0.2, y: 0.42 }), tee, aim, width, height)[0];
+    expect(higher).toBeCloseTo(base, 1);
+    expect(project(10, { x: 0.1, y: ground.y })).toEqual(project(10));
   });
 });
 

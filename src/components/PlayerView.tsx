@@ -415,6 +415,7 @@ export function PlayerView({
 
   const projectFor = useCallback(
     (cal: TracerCalibration) => {
+      // Manual is the only mode that uses the three-point spline. A numbered flight never does.
       if (cal.mode === 'manual') {
         if (!cal.manualStart || !cal.manualApex || !cal.manualFinish) return null;
         return manualTrace(cal.manualStart, cal.manualApex, cal.manualFinish, cal.shape ?? 'straight');

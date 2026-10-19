@@ -88,27 +88,42 @@ function projectRaw(sample: FlightSample, frame: Frame, width: number, height: n
   };
 }
 
+interface AimTurn {
+  cos: number;
+  sin: number;
+  ox: number;
+  oy: number;
+}
+
 /**
- * Extra sideways pixels so a down-the-line fade reads as a bend.
- * The camera sits in the shot plane, and perspective squeezes the Magnus
- * residual onto the start line, so the stroke looks like a straight tilt.
- * This is only the part of the side movement that is off the straight line
- * between the start line and the landing. The landing pixel is unchanged,
- * and it stays the true angle. The scale is the geometric mean of the
- * tripod distance and the carry — camera distance and field of view still
- * set how big that bend is.
+ * Turn the picture so world +Z lies on the line from the ball to the aim point.
+ * That line is the intended line. Nothing about the shot — launch, spin, or
+ * where it lands — changes this turn.
  */
-function magnusBowPx(sample: FlightSample, heading: number, endResidual: number, carry: number, distance: number, focal: number): number {
-  if (carry < 1 || distance < 0.3) return 0;
-  const residual = sample.x - heading * sample.z;
-  const linear = endResidual * (sample.z / carry);
-  // The side residual lags a straight line out to the landing, so the stroke
-  // leaves that line and comes back. A fade returns from the left; a draw
-  // returns from the right. Endpoints stay on the real landing.
-  const bow = residual - linear;
-  const range = carry + distance;
-  const perMeter = 1 / Math.sqrt(range * distance) - 1 / range;
-  return bow * perMeter * focal;
+function aimTurn(frame: Frame, ball: Pt, target: Pt, width: number, height: number): AimTurn | null {
+  const origin = projectRaw({ t: 0, x: 0, y: 0, z: 0 }, frame, width, height);
+  if (!origin) return null;
+  let aim: { x: number; y: number } | null = null;
+  for (const z of [40, 100, 200]) {
+    const pixel = projectRaw({ t: 0, x: 0, y: 0, z }, frame, width, height);
+    if (!pixel) continue;
+    if (Math.hypot(pixel.x - origin.x, pixel.y - origin.y) > 8) {
+      aim = pixel;
+      break;
+    }
+  }
+  const projX = (aim?.x ?? origin.x) - origin.x;
+  const projY = (aim?.y ?? origin.y) - origin.y;
+  const wantX = target.x * width - ball.x * width;
+  const wantY = target.y * height - ball.y * height;
+  let cos = 1;
+  let sin = 0;
+  if (Math.hypot(projX, projY) > 4 && Math.hypot(wantX, wantY) > 4) {
+    const turn = Math.atan2(wantY, wantX) - Math.atan2(projY, projX);
+    cos = Math.cos(turn);
+    sin = Math.sin(turn);
+  }
+  return { cos, sin, ox: origin.x, oy: origin.y };
 }
 
 /** Screen height of a ground point straight ahead, before the aim-line rotation. */
@@ -129,62 +144,35 @@ function projectMapped(
   height: number,
 ): TracerPoint[] {
   if (samples.length < 2 || width < 2 || height < 2) return [];
-  let heading = 0;
-  for (const sample of samples) {
-    if (sample.z > 8) {
-      heading = sample.x / sample.z;
-      break;
-    }
-  }
-  const landing = samples[samples.length - 1];
-  const carry = landing.z;
-  const endResidual = landing.x - heading * carry;
-  const focal = focalLength(frame.fov, height);
-  const drawBow = camera.view !== 'face';
-  const raw: TracerPoint[] = [];
-  for (const sample of samples) {
-    const pixel = projectRaw(sample, frame, width, height);
-    if (!pixel) continue;
-    if (drawBow) {
-      pixel.x += magnusBowPx(sample, heading, endResidual, carry, camera.distance, focal);
-    }
-    raw.push({ x: pixel.x, y: pixel.y, t: sample.t });
-  }
-  if (raw.length < 2) return [];
-
-  const origin = raw[0];
-  let aim: { x: number; y: number } | null = null;
-  for (const z of [40, 100, 200]) {
-    const pixel = projectRaw({ t: 0, x: 0, y: 0, z }, frame, width, height);
-    if (!pixel) continue;
-    if (Math.hypot(pixel.x - origin.x, pixel.y - origin.y) > 8) {
-      aim = pixel;
-      break;
-    }
-  }
+  const turn = aimTurn(frame, ball, target, width, height);
+  if (!turn) return [];
   const ballX = ball.x * width;
   const ballY = ball.y * height;
-  const projX = (aim?.x ?? origin.x) - origin.x;
-  const projY = (aim?.y ?? origin.y) - origin.y;
-  const wantX = target.x * width - ballX;
-  const wantY = target.y * height - ballY;
-  let cos = 1;
-  let sin = 0;
-  if (Math.hypot(projX, projY) > 4 && Math.hypot(wantX, wantY) > 4) {
-    const turn = Math.atan2(wantY, wantX) - Math.atan2(projY, projX);
-    cos = Math.cos(turn);
-    sin = Math.sin(turn);
+  const path: TracerPoint[] = [];
+  for (const sample of samples) {
+    // Down the line, draw the ball at its real horizontal angle off the intended
+    // line. That angle is atan2(sideways, downrange): launch direction at the
+    // start, then whatever spin does after that. It is not solved so the stroke
+    // can pass through the aim point or the horizon.
+    const source = camera.view === 'dtl' ? { ...sample, x: 0 } : sample;
+    const pixel = projectRaw(source, frame, width, height);
+    if (!pixel) continue;
+    const rawX = pixel.x - turn.ox;
+    const rawY = pixel.y - turn.oy;
+    const aimedX = rawX * turn.cos - rawY * turn.sin;
+    const aimedY = rawX * turn.sin + rawY * turn.cos;
+    let px = aimedX;
+    let py = aimedY;
+    if (camera.view === 'dtl') {
+      const psi = Math.atan2(sample.x, sample.z);
+      const c = Math.cos(psi);
+      const s = Math.sin(psi);
+      px = aimedX * c - aimedY * s;
+      py = aimedX * s + aimedY * c;
+    }
+    path.push({ x: (ballX + px) / width, y: (ballY + py) / height, t: sample.t });
   }
-
-  return raw.map((point) => {
-    const dx = point.x - origin.x;
-    const dy = point.y - origin.y;
-    return {
-      x: (ballX + dx * cos - dy * sin) / width,
-      y: (ballY + dx * sin + dy * cos) / height,
-      t: point.t,
-    };
-  });
+  return path.length >= 2 ? path : [];
 }
 
 interface GroundView {
@@ -193,14 +181,15 @@ interface GroundView {
 }
 
 /**
- * Camera pitch, then field of view, so the carry lands on the tapped screen
- * height. Pitch is enough when the landing needs to move up the frame. A
- * hillside asks for the opposite, and pitch bottoms out, so the field of view
- * then scales the ground. The sliders stay what Scott set; this is only the
- * picture. Sideways finish is left to launch and spin.
+ * Camera pitch, then field of view, so the ground straight ahead at the carry
+ * distance sits on the tapped screen height. The tap's sideways position is
+ * not used, and neither is the ball's actual sideways finish. Pitch is enough
+ * when that ground point needs to move up the frame. A hillside asks for the
+ * opposite, and pitch bottoms out, so the field of view then scales the ground.
+ * The sliders stay what Scott set; this is only the picture.
  */
 function viewForGround(
-  samples: FlightSample[],
+  carryZ: number,
   camera: TracerCamera,
   ball: Pt,
   target: Pt,
@@ -209,9 +198,13 @@ function viewForGround(
   groundY: number,
 ): GroundView {
   const targetY = Math.min(0.98, Math.max(0.02, groundY));
+  const straight: FlightSample[] = [
+    { t: 0, x: 0, y: 0, z: 0 },
+    { t: 1, x: 0, y: 0, z: Math.max(5, carryZ) },
+  ];
   const yAt = (phi: number, fov: number): number | null => {
     const tuned = { ...camera, fov };
-    const path = projectMapped(samples, tuned, cameraFrame(tuned, ball.y, phi), ball, target, width, height);
+    const path = projectMapped(straight, tuned, cameraFrame(tuned, ball.y, phi), ball, target, width, height);
     return path.length >= 2 ? path[path.length - 1].y : null;
   };
   const refine = (
@@ -269,13 +262,13 @@ function viewForGround(
 }
 
 /**
- * Project the flight. The aim tap is the intended line only: world +Z on the
- * ground, which sets which way the camera is turned. It is not the landing.
- * Launch direction and spin are already in the samples, so the ball can finish
- * left or right of that line. Side spin bends the stroke off the start line
- * instead of tilting a straight segment. Camera height, distance, and field
- * of view are what change the arc's size. A landing-ground tap solves pitch,
- * and field of view only if pitch cannot reach, so the carry meets that height.
+ * Project the flight. The aim tap is the line from the ball to the aim point,
+ * and that is the only camera yaw. Launch direction is degrees off that line:
+ * a 2° left launch leaves 2° left of it, whatever the spin axis is. Spin only
+ * changes the angle after that, and the landing is the last sample. It is not
+ * pulled onto the aim point or the horizon. A horizon tap solves pitch, and
+ * field of view only if pitch cannot reach, so the ground straight ahead at
+ * the carry distance meets that height. Its sideways position is ignored.
  */
 export function projectFlight(
   samples: FlightSample[],
@@ -287,10 +280,11 @@ export function projectFlight(
   ground?: Pt | null,
 ): TracerPoint[] {
   if (samples.length < 2 || width < 2 || height < 2) return [];
-  if (!ground || !Number.isFinite(ground.y)) {
+  const carry = samples[samples.length - 1]?.z ?? 0;
+  if (!ground || !Number.isFinite(ground.y) || !(carry > 1)) {
     return projectMapped(samples, camera, cameraFrame(camera, ball.y), ball, target, width, height);
   }
-  const solved = viewForGround(samples, camera, ball, target, width, height, ground.y);
+  const solved = viewForGround(carry, camera, ball, target, width, height, ground.y);
   const tuned = { ...camera, fov: solved.fov };
   return projectMapped(samples, tuned, cameraFrame(tuned, ball.y, solved.pitch), ball, target, width, height);
 }
