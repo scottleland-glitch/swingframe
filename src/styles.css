@@ -1393,9 +1393,9 @@ textarea { resize: vertical; }
 }
 
 .welcome {
-  position: relative;
+  position: fixed;
+  inset: 0;
   overflow: hidden;
-  height: 100dvh;
   background: #0b1424;
   color: #f4f7fb;
 }
