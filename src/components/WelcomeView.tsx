@@ -32,7 +32,7 @@ export function WelcomeView({ onNewSession, onHistory }: { onNewSession: () => v
         <h1 className="welcome-word">Swingframe</h1>
         <p className="welcome-sub">Swing analysis and shot tracer</p>
         <p className="welcome-version" data-testid="welcome-version">
-          Version {APP_VERSION}
+          V.{APP_VERSION}
         </p>
       </header>
       <div className="welcome-actions" ref={menuRef}>
