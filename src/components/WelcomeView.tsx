@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { APP_VERSION } from '../version';
 import { Icon } from './Icons';
 
-const HERO = `${import.meta.env.BASE_URL}welcome/hero-pair.jpg`;
+const HERO = `${import.meta.env.BASE_URL}welcome/hero-stack.jpg`;
 
 export function WelcomeView({ onNewSession, onHistory }: { onNewSession: () => void; onHistory: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
