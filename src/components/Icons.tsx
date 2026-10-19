@@ -37,7 +37,6 @@ export type IconName =
   | 'help'
   | 'draw'
   | 'crosshair'
-  | 'markerEdit'
   | 'lock'
   | 'unlock'
   | 'numbers'
@@ -279,14 +278,6 @@ function paths(name: IconName) {
         <>
           <circle cx="12" cy="12" r="5.25" />
           <path d="M12 2.25v3.5M12 18.25v3.5M2.25 12h3.5M18.25 12h3.5" />
-        </>
-      );
-    case 'markerEdit':
-      return (
-        <>
-          <circle cx="10" cy="14" r="5" />
-          <path d="M10 11.5v5M7.5 14h5" />
-          <path d="M14.2 4.2 19 9l-5.2 5.2-2.6.4.4-2.6 2.6-7.8Z" />
         </>
       );
     case 'lock':

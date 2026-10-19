@@ -142,8 +142,6 @@ export function PlayerView({
   const draftTouched = useRef(false);
   const draftRef = useRef<Pt | null>(null);
   const setupPhaseRef = useRef<SetupPhase | null>(null);
-  const editSnapshot = useRef<TracerCalibration | null>(null);
-  const editRelock = useRef(false);
   const tracerPending = useRef<{ shot: ShotData; tracer: TracerCalibration } | null>(null);
   const tracerTimer = useRef<number | null>(null);
   const tracerRun = useRef(false);
@@ -439,7 +437,6 @@ export function PlayerView({
         swing.videoWidth || 9,
         swing.videoHeight || 16,
         cal.ground,
-        cal.referenceYards != null && cal.referenceYards > 1 ? cal.referenceYards * 0.9144 : null,
       );
     },
     [swing?.view, swing?.videoWidth, swing?.videoHeight, activeShot],
@@ -723,95 +720,6 @@ export function PlayerView({
     setShapesOpen(false);
   }, []);
 
-  const beginMarkerEdit = useCallback(() => {
-    if (setupPhaseRef.current === 'edit') return;
-    const cal = calRef.current;
-    editSnapshot.current = cal;
-    editRelock.current = cal.locked === true;
-    stageRef.current?.pause();
-    clearTracerHold();
-    setToolsOpen(false);
-    setHelpOpen(false);
-    setImmersive(false);
-    setNumbersOpen(false);
-    setShapesOpen(false);
-    setDrawHint(false);
-    setTracerEngaged(true);
-    draftTouched.current = false;
-    draftRef.current = null;
-    setDraftPoint(null);
-    setAimGuides(null);
-    if (cal.locked) rememberTracer(shotRef.current, { ...cal, locked: false }, true);
-    setupPhaseRef.current = 'edit';
-    setSetupPhase('edit');
-  }, [clearTracerHold, rememberTracer]);
-
-  const finishMarkerEdit = useCallback(() => {
-    const cal = calRef.current;
-    const relock = editRelock.current;
-    editRelock.current = false;
-    editSnapshot.current = null;
-    if (cal.impactTime == null) {
-      rememberTracer(shotRef.current, { ...cal, locked: false, setupDone: false }, true);
-      enterStep('impact');
-      return;
-    }
-    const next = relock ? { ...cal, locked: true, setupDone: true } : cal;
-    if (next !== cal) rememberTracer(shotRef.current, next, true);
-    leaveSetup();
-  }, [enterStep, leaveSetup, rememberTracer]);
-
-  const cancelMarkerEdit = useCallback(() => {
-    const snap = editSnapshot.current;
-    editSnapshot.current = null;
-    editRelock.current = false;
-    if (snap) rememberTracer(shotRef.current, snap, true);
-    leaveSetup();
-  }, [leaveSetup, rememberTracer]);
-
-  const resetImpact = useCallback(() => {
-    rememberTracer(shotRef.current, { ...calRef.current, impactTime: null }, true);
-  }, [rememberTracer]);
-
-  const onEditGesture = useCallback(
-    (which: 'ball' | 'target' | 'ground' | 'start' | 'apex' | 'finish', point: Pt, phase: 'move' | 'up') => {
-      const cal = calRef.current;
-      const next = { ...cal };
-      if (which === 'ball') next.ball = point;
-      else if (which === 'target') next.target = { ...point };
-      else if (which === 'ground') next.ground = point;
-      else if (which === 'start') next.manualStart = point;
-      else if (which === 'apex') next.manualApex = point;
-      else if (which === 'finish') next.manualFinish = point;
-      rememberTracer(shotRef.current, next, phase === 'up');
-    },
-    [rememberTracer],
-  );
-
-  const toggleYardage = useCallback(() => {
-    const cal = calRef.current;
-    if (cal.referenceYards != null) {
-      rememberTracer(shotRef.current, { ...cal, referenceYards: null }, true);
-      return;
-    }
-    const carry = simulateShot(shotRef.current)?.carryYd;
-    const yards = carry != null && carry > 10 ? Math.round(carry) : 150;
-    rememberTracer(shotRef.current, { ...cal, referenceYards: yards }, true);
-  }, [rememberTracer]);
-
-  const setReferenceYards = useCallback(
-    (text: string) => {
-      const trimmed = text.trim();
-      const yards = trimmed === '' ? null : Number(trimmed);
-      rememberTracer(
-        shotRef.current,
-        { ...calRef.current, referenceYards: yards != null && Number.isFinite(yards) && yards > 0 ? yards : null },
-        true,
-      );
-    },
-    [rememberTracer],
-  );
-
   const beginSetup = useCallback(
     (redo = false) => {
       stageRef.current?.pause();
@@ -825,12 +733,17 @@ export function PlayerView({
       setTracerEngaged(true);
       const cal = calRef.current;
       if (!redo && setupStep(cal) === 'edit') {
-        beginMarkerEdit();
+        draftTouched.current = false;
+        draftRef.current = null;
+        setDraftPoint(null);
+        setAimGuides(null);
+        setupPhaseRef.current = 'edit';
+        setSetupPhase('edit');
         return;
       }
       enterStep(redo ? 'aim' : setupStep(cal));
     },
-    [beginMarkerEdit, clearTracerHold, enterStep],
+    [clearTracerHold, enterStep],
   );
 
   const confirmDraft = useCallback(
@@ -1204,7 +1117,7 @@ export function PlayerView({
       clipEnd: trimOut ?? swing.duration ?? 0,
       videoWidth: swing.videoWidth || 0,
       videoHeight: swing.videoHeight || 0,
-      marks: setupPhase === 'edit' ? null : showAimMarks(activeCal),
+      marks: showAimMarks(activeCal),
       tracerPath: activeCal.showTracer !== false ? tracerPath : null,
       signal: controller.signal,
       onProgress: (fraction) => setExportProgress(fraction),
@@ -1229,11 +1142,9 @@ export function PlayerView({
   const setupKind =
     setupPhase === 'ball' || setupPhase === 'start'
       ? 'ball'
-      : setupPhase === 'horizon'
-        ? 'pin'
-        : setupPhase === 'finish'
-          ? 'ground'
-          : 'target';
+      : setupPhase === 'horizon' || setupPhase === 'finish'
+        ? 'ground'
+        : 'target';
   const placingPoint = setupPhase != null && showsPlacementReticle(setupPhase);
   const playbackStep = setupPhase === 'impact' || setupPhase === 'lock';
   const numbersMissing = activeCal.mode !== 'manual' && activeCal.impactTime != null && !launchIsSet(activeShot);
@@ -1243,11 +1154,7 @@ export function PlayerView({
       : setupPhase === 'ball'
         ? 'Set ball position'
         : setupPhase === 'horizon'
-          ? activeCal.referenceYards != null
-            ? 'Known yardage'
-            : 'Set landing spot'
-          : setupPhase === 'edit'
-            ? 'Drag the markers'
+          ? 'Set horizon'
           : setupPhase === 'start'
             ? 'Set start'
             : setupPhase === 'apex'
@@ -1304,20 +1211,7 @@ export function PlayerView({
             activeCal.showTracer !== false && (tuningTracer || activeCal.impactTime != null) ? previewPath : null
           }
           tracerElapsed={tracerElapsed}
-          tracerMarks={setupPhase == null ? showAimMarks(activeCal) : null}
-          editMarkers={
-            setupPhase === 'edit'
-              ? {
-                  ball: activeCal.ball,
-                  target: activeCal.target,
-                  ground: activeCal.ground ?? null,
-                  start: activeCal.mode === 'manual' ? activeCal.manualStart ?? null : null,
-                  apex: activeCal.mode === 'manual' ? activeCal.manualApex ?? null : null,
-                  finish: activeCal.mode === 'manual' ? activeCal.manualFinish ?? null : null,
-                }
-              : null
-          }
-          onEditGesture={onEditGesture}
+          tracerMarks={setupPhase == null || setupPhase === 'edit' ? showAimMarks(activeCal) : null}
         />
       </div>
 
@@ -1338,7 +1232,7 @@ export function PlayerView({
       {setupPhase && (
         <div className="setup-chrome">
           <div className="setup-nav">
-            <button type="button" className="setup-nav-btn" aria-label="Cancel setup" data-testid="setup-cancel" onClick={() => (setupPhase === 'edit' ? cancelMarkerEdit() : leaveSetup())}>
+            <button type="button" className="setup-nav-btn" aria-label="Cancel setup" data-testid="setup-cancel" onClick={leaveSetup}>
               <Icon name="close" />
             </button>
             <button
@@ -1346,7 +1240,7 @@ export function PlayerView({
               className="setup-nav-btn"
               aria-label="Back"
               data-testid="setup-back"
-              disabled={setupPhase === 'edit' || activeCal.locked === true || previousStep(setupPhase, activeCal.mode) == null}
+              disabled={activeCal.locked === true || previousStep(setupPhase, activeCal.mode) == null}
               onClick={setupBack}
             >
               <Icon name="undo" />
@@ -1356,46 +1250,16 @@ export function PlayerView({
               className="setup-nav-btn"
               aria-label="Start over"
               data-testid="setup-start-over"
-              disabled={setupPhase === 'edit' || activeCal.locked === true}
+              disabled={activeCal.locked === true}
               onClick={startOver}
             >
               <Icon name="restart" />
             </button>
           </div>
           {setupHint && (
-            <p className={cx('setup-hint', (setupPhase === 'horizon' || setupPhase === 'edit') && 'is-tall')} data-testid="setup-hint">
+            <p className="setup-hint" data-testid="setup-hint">
               {setupHint}
-              {setupPhase === 'horizon' && activeCal.referenceYards == null && <span>Where would this shot land?</span>}
-              {setupPhase === 'horizon' && activeCal.referenceYards != null && <span>Stick the pin in a flag you know.</span>}
             </p>
-          )}
-          {setupPhase === 'horizon' && (
-            <div className="depth-extra">
-              <button type="button" data-testid="known-yardage" aria-pressed={activeCal.referenceYards != null} onClick={toggleYardage}>
-                Known yardage
-              </button>
-              {activeCal.referenceYards != null && (
-                <label>
-                  <input
-                    data-testid="reference-yards"
-                    inputMode="decimal"
-                    value={String(activeCal.referenceYards)}
-                    onChange={(event) => setReferenceYards(event.target.value)}
-                  />
-                  yards
-                </label>
-              )}
-            </div>
-          )}
-          {setupPhase === 'edit' && (
-            <div className="marker-edit-bar">
-              <button type="button" className="text" data-testid="reset-impact" onClick={resetImpact}>
-                Reset impact
-              </button>
-              <button type="button" className="check" data-testid="edit-markers-done" aria-label="Done editing markers" onClick={finishMarkerEdit}>
-                <Icon name="check" />
-              </button>
-            </div>
           )}
           {playbackStep &&
             createPortal(
@@ -1503,17 +1367,6 @@ export function PlayerView({
           >
             <Icon name="tracer" />
           </button>
-          {setupStep(activeCal) === 'edit' && (
-            <button
-              type="button"
-              aria-label="Edit markers"
-              aria-pressed={setupPhase === 'edit'}
-              data-testid="quick-edit-markers"
-              onClick={() => (setupPhase === 'edit' ? finishMarkerEdit() : beginMarkerEdit())}
-            >
-              <Icon name="markerEdit" />
-            </button>
-          )}
           <button
             type="button"
             aria-label={activeCal.locked ? 'Unlock tracer' : 'Lock tracer'}
@@ -1926,7 +1779,7 @@ export function PlayerView({
           <div className="sheet-body">
             <p className="tip">
               The video stays on this page. Tap the pencil for drawing tools. Place a drawing with two fingers. Undo is on the white bar, and Clear all is in the drawing menu.
-              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon walks through aim, ball, and a landing pin. The tip is where this shot would land. Manual trace, at the bottom left, draws a flight through start, apex, and finish. Only the circle for the current step is on the picture. The undo arrow brings the previous circle back. On Set impact time and on Lock, a white bar at the bottom has the scrubber, frame step, and play, and those buttons sit above it. No setup circles are on the picture then. Lock opens launch numbers only when they are still empty. A manual trace never asks for numbers. After Lock, the frosted pill has aim, the tracer, a pencil to edit the markers, and lock. Editing shows every marker and redraws the line as you drag. The check closes it. If it was locked, it locks again. Reset impact is only there, and none of that edit view is in the export. Unlock with the pill, then the round arrow starts setup over. The 123 icon opens the numbers any time. Clear tracer removes the line. Undo puts it back.
+              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon walks through aim, ball, and horizon. Manual trace, at the bottom left, draws a flight through start, apex, and finish. Only the circle for the current step is on the picture. The undo arrow brings the previous circle back. On Set impact time and on Lock, a white bar at the bottom has the scrubber, frame step, and play, and those buttons sit above it. No setup circles are on the picture then. Lock opens launch numbers only when they are still empty. A manual trace never asks for numbers. After Lock, the aim pill shows the points. Unlock with the pill, then the round arrow starts setup over. The 123 icon opens the numbers any time. Clear tracer removes the line. Undo puts it back.
             </p>
             {swing.notes ? <p className="note-block">{swing.notes}</p> : null}
             <div className="fps-row" role="group" aria-label="Frame step size">

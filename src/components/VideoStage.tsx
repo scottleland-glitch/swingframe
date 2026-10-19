@@ -70,17 +70,6 @@ type TwoFinger =
       latest: Drawing[] | null;
     };
 
-/** Tip sits on the ground point. The pole and flag rise about 46px and stay see-through. */
-function LandingPin() {
-  return (
-    <span className="landing-pin" data-testid="landing-pin">
-      <span className="landing-pin-flag" />
-      <span className="landing-pin-pole" />
-      <span className="landing-pin-tip" />
-    </span>
-  );
-}
-
 export const VideoStage = forwardRef<
   VideoEngine,
   {
@@ -110,7 +99,7 @@ export const VideoStage = forwardRef<
     onSuggestAim?: (pt: Pt, phase: 'move' | 'up') => void;
     onConfirmAim?: () => void;
     /** The marker for the current setup step. Tap confirms it. A drag confirms on release. */
-    setupMarker?: { point: Pt; kind: 'ball' | 'target' | 'ground' | 'pin'; toe?: [Pt, Pt]; parallel?: [Pt, Pt] } | null;
+    setupMarker?: { point: Pt; kind: 'ball' | 'target' | 'ground'; toe?: [Pt, Pt]; parallel?: [Pt, Pt] } | null;
     onSetupGesture?: (point: Pt, phase: 'move' | 'up' | 'tap') => void;
     /** Finished setup: drag the existing markers. Not drawn into exports. */
     editMarkers?: {
@@ -1480,19 +1469,19 @@ export const VideoStage = forwardRef<
         )}
       </div>
       {reticle && (
-        <div className="aim-reticle" data-testid="aim-reticle" data-kind={reticle.kind === 'ground' ? 'pin' : reticle.kind} style={{ left: reticle.x, top: reticle.y }}>
-          {reticle.kind === 'ground' ? <LandingPin /> : <span className="aim-reticle-ring" />}
-          <span className="aim-reticle-label">{reticle.kind === 'ball' ? 'Ball' : reticle.kind === 'ground' ? 'Landing' : 'Aim'}</span>
+        <div className="aim-reticle" data-testid="aim-reticle" data-kind={reticle.kind} style={{ left: reticle.x, top: reticle.y }}>
+          <span className="aim-reticle-ring" />
+          <span className="aim-reticle-label">{reticle.kind === 'ball' ? 'Ball' : reticle.kind === 'ground' ? 'Ground' : 'Aim'}</span>
         </div>
       )}
       {setupOnStage && !reticle && (
         <div
           className="aim-reticle"
           data-testid="setup-marker"
-          data-kind={setupMarker?.kind === 'ball' ? 'ball' : setupMarker?.kind === 'pin' ? 'pin' : setupMarker?.kind === 'ground' ? 'ground' : 'suggest'}
+          data-kind={setupMarker?.kind === 'ball' ? 'ball' : setupMarker?.kind === 'ground' ? 'ground' : 'suggest'}
           style={{ left: setupOnStage.x, top: setupOnStage.y }}
         >
-          {setupMarker?.kind === 'pin' ? <LandingPin /> : <span className="aim-reticle-ring" />}
+          <span className="aim-reticle-ring" />
         </div>
       )}
       {editOnStage && !setupOnStage && (
@@ -1508,8 +1497,8 @@ export const VideoStage = forwardRef<
             </div>
           )}
           {editOnStage.ground && (
-            <div className="aim-reticle" data-testid="edit-marker-ground" data-kind="pin" style={{ left: editOnStage.ground.x, top: editOnStage.ground.y }}>
-              <LandingPin />
+            <div className="aim-reticle" data-testid="edit-marker-ground" data-kind="ground" style={{ left: editOnStage.ground.x, top: editOnStage.ground.y }}>
+              <span className="aim-reticle-ring" />
             </div>
           )}
           {editOnStage.start && (
@@ -1553,7 +1542,7 @@ export const VideoStage = forwardRef<
           {calibrate === 'ball'
             ? 'Drag the ball. The crosshair sits above your finger.'
             : calibrate === 'ground'
-              ? 'Stick the pin in the ground. The tip sits above your finger.'
+              ? 'Drag the landing ground. The crosshair sits above your finger.'
               : 'Drag the aim point. The crosshair sits above your finger.'}
         </div>
       ) : (
