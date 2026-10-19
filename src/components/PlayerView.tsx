@@ -104,6 +104,7 @@ export function PlayerView({
   const { swing, blob, drawings, pastCount, load, saveError, commit, undo, patch, reload } = useSwing(id);
   const stageRef = useRef<VideoEngine>(null);
   const [tool, setTool] = useState<Tool>('line');
+  const [drawHint, setDrawHint] = useState(false);
   const [color, setColor] = useState<string>(DRAW_COLORS[0]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hasDraft, setHasDraft] = useState(false);
@@ -728,6 +729,7 @@ export function PlayerView({
       setImmersive(false);
       setNumbersOpen(false);
       setShapesOpen(false);
+      setDrawHint(false);
       setTracerEngaged(true);
       const cal = calRef.current;
       if (!redo && setupStep(cal) === 'edit') {
@@ -969,6 +971,7 @@ export function PlayerView({
   function chooseTool(next: Tool) {
     setTool(next);
     setPinch(false);
+    setDrawHint(true);
     setToolsOpen(false);
     setPanelPage('draw');
   }
@@ -1203,6 +1206,7 @@ export function PlayerView({
           }
           onSetupGesture={onSetupGesture}
           freezeDraw={setupPhase != null}
+          showDrawHint={drawHint}
           tracerPath={
             activeCal.showTracer !== false && (tuningTracer || activeCal.impactTime != null) ? previewPath : null
           }

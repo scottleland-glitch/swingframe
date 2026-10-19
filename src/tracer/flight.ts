@@ -11,14 +11,24 @@ const M_TO_FEET = 3.2808399;
 
 /**
  * Constant-coefficient drag plus Magnus lift, with a slow spin decay.
- * A 167 mph, 12° launch, 2600 rpm, straight shot carries about 280 yards,
- * apexes a bit over 100 feet, and stays up about 6 to 7 seconds.
- * A wedge is closer to 5 or 6 seconds. This is not Foresight's ball model.
+ * A 167 mph, 12° launch, 2600 rpm, straight shot carries a bit under 300 yards
+ * and apexes a bit over 100 feet. A 150 mph, 12°, 2500 rpm driver carries in
+ * the mid-250s. Ten degrees of spin axis curves that driver about 20 to 25
+ * yards, a 7-iron about 10 to 14, and a wedge about 6 to 9. This is not
+ * Foresight's ball model.
  */
-const CD_BASE = 0.21;
+const CD_BASE = 0.188;
 const CD_SPIN = 0.2;
 const CL_PER_S = 1.6;
 const CL_MAX = 0.25;
+/**
+ * Extra sideways lift while the lift coefficient is still climbing with spin.
+ * Driver spin sits on that slope, and a pure split of the Magnus force then
+ * curves only about 16 yards at 10° of axis. Trackman-style numbers are about
+ * 2 to 2.5 yards per degree at driver distance. Irons and wedges are already
+ * at the lift cap, so the factor fades to 1 and their curve is unchanged.
+ */
+const SIDE_EXTRA = 0.78;
 const STEP = 0.005;
 /** Spin eases off over the flight so hang time stays in a real range. */
 const SPIN_TAU = 16;
@@ -84,23 +94,25 @@ function accel(s: V6, wx: number, wy: number, wz: number): V6 {
   let ay = -GRAVITY;
   let az = 0;
   if (v > 0.5) {
-    const spinRatio = (BALL_RADIUS * w) / v;
-    const cd = CD_BASE + CD_SPIN * spinRatio;
-    const cl = Math.min(CL_MAX, CL_PER_S * spinRatio);
-    const drag = (0.5 * AIR_DENSITY * BALL_AREA * cd * v) / BALL_MASS;
-    ax -= drag * s[3];
-    ay -= drag * s[4];
-    az -= drag * s[5];
-    if (w > 1) {
-      const cx = wy * s[5] - wz * s[4];
-      const cy = wz * s[3] - wx * s[5];
-      const cz = wx * s[4] - wy * s[3];
-      const cm = Math.hypot(cx, cy, cz) || 1;
-      const lift = (0.5 * AIR_DENSITY * BALL_AREA * cl * v * v) / BALL_MASS;
-      ax += (lift * cx) / cm;
-      ay += (lift * cy) / cm;
-      az += (lift * cz) / cm;
-    }
+      const spinRatio = (BALL_RADIUS * w) / v;
+      const cd = CD_BASE + CD_SPIN * spinRatio;
+      const rawCl = CL_PER_S * spinRatio;
+      const cl = Math.min(CL_MAX, rawCl);
+      const side = 1 + SIDE_EXTRA * Math.max(0, 1 - rawCl / CL_MAX);
+      const drag = (0.5 * AIR_DENSITY * BALL_AREA * cd * v) / BALL_MASS;
+      ax -= drag * s[3];
+      ay -= drag * s[4];
+      az -= drag * s[5];
+      if (w > 1) {
+        const cx = wy * s[5] - wz * s[4];
+        const cy = wz * s[3] - wx * s[5];
+        const cz = wx * s[4] - wy * s[3];
+        const cm = Math.hypot(cx, cy, cz) || 1;
+        const lift = (0.5 * AIR_DENSITY * BALL_AREA * cl * v * v) / BALL_MASS;
+        ax += (side * lift * cx) / cm;
+        ay += (lift * cy) / cm;
+        az += (lift * cz) / cm;
+      }
   }
   return [s[3], s[4], s[5], ax, ay, az];
 }

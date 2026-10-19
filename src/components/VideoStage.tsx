@@ -113,6 +113,8 @@ export const VideoStage = forwardRef<
     onEditGesture?: (which: EditWhich, point: Pt, phase: 'move' | 'up') => void;
     /** Setup owns the picture, so drawing gestures stay off. */
     freezeDraw?: boolean;
+    /** The two-finger hint. Off until a drawing tool is chosen, so it does not sit on playback. */
+    showDrawHint?: boolean;
     immersive?: boolean;
     onExitImmersive?: () => void;
     tracerPath?: TracerPoint[] | null;
@@ -149,6 +151,7 @@ export const VideoStage = forwardRef<
     editMarkers = null,
     onEditGesture,
     freezeDraw = false,
+    showDrawHint = false,
     immersive = false,
     onExitImmersive,
     tracerPath = null,
@@ -1543,7 +1546,11 @@ export const VideoStage = forwardRef<
               : 'Drag the aim point. The crosshair sits above your finger.'}
         </div>
       ) : (
-        !freezeDraw && !setupMarker && !editMarkers && gestureHint && !panMode && <div className="gesture-chip">{gestureHint}</div>
+        showDrawHint && !immersive && !freezeDraw && !setupMarker && !editMarkers && gestureHint && !panMode && (
+          <div className="gesture-chip" data-testid="draw-hint">
+            {gestureHint}
+          </div>
+        )
       )}
       {mediaError && <div className="stage-error">{mediaError}</div>}
     </div>

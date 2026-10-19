@@ -25,12 +25,12 @@ describe('ball flight', () => {
     const flight = driver();
     expect(flight).not.toBeNull();
     expect(flight!.carryYd).toBeGreaterThan(275);
-    expect(flight!.carryYd).toBeLessThan(290);
+    expect(flight!.carryYd).toBeLessThan(305);
     expect(flight!.apexFt).toBeGreaterThan(100);
     expect(flight!.apexFt).toBeLessThan(120);
     expect(flight!.samples.at(-1)?.y).toBe(0);
     expect(flight!.flightTime).toBeGreaterThan(6);
-    expect(flight!.flightTime).toBeLessThan(7.2);
+    expect(flight!.flightTime).toBeLessThan(7.5);
   });
 
   it('keeps a wedge in the air for about five or six seconds', () => {
@@ -39,6 +39,33 @@ describe('ball flight', () => {
     expect(wedge!.samples.at(-1)?.y).toBe(0);
     expect(wedge!.flightTime).toBeGreaterThan(5);
     expect(wedge!.flightTime).toBeLessThan(6.3);
+  });
+
+  it('curves a driver about two yards per degree of spin axis, and less for an iron and a wedge', () => {
+    const driver = simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, spin: 2500, spinAxis: 10 });
+    expect(driver).not.toBeNull();
+    expect(driver!.carryYd).toBeGreaterThan(255);
+    expect(driver!.carryYd).toBeLessThan(270);
+    expect(driver!.apexFt).toBeGreaterThan(70);
+    expect(driver!.apexFt).toBeLessThan(110);
+    expect(driver!.curveYd).toBeGreaterThan(20);
+    expect(driver!.curveYd).toBeLessThan(25);
+
+    const pushedFade = simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, hla: -2, spin: 2500, spinAxis: 10 })!;
+    expect(pushedFade.curveYd).toBeGreaterThan(12);
+    expect(pushedFade.curveYd).toBeLessThan(15);
+
+    const iron = simulateShot({ ...emptyShot(), ballSpeed: 120, vla: 16, spin: 7000, spinAxis: 10 })!;
+    expect(iron.curveYd).toBeGreaterThan(10);
+    expect(iron.curveYd).toBeLessThan(14);
+
+    const wedge = simulateShot({ ...emptyShot(), ballSpeed: 100, vla: 30, spin: 9000, spinAxis: 10 })!;
+    expect(wedge.curveYd).toBeGreaterThan(6);
+    expect(wedge.curveYd).toBeLessThan(9);
+
+    const draw = simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, spin: 2500, spinAxis: -10 })!;
+    expect(draw.curveYd).toBeLessThan(-20);
+    expect(draw.curveYd).toBeGreaterThan(-25);
   });
 
   it('raises the apex with launch and with backspin, and curves to the right for a fade', () => {
@@ -688,7 +715,7 @@ describe('tracer timing', () => {
     });
     expect(carries[0]).toBeGreaterThan(carries[3]);
     expect(carries[3]).toBeGreaterThan(100);
-    expect(carries[3]).toBeLessThan(130);
+    expect(carries[3]).toBeLessThan(140);
   });
 
   it('applies left as negative and right as positive', () => {
