@@ -15,8 +15,34 @@ type StoredSwing = Omit<SwingMeta, 'thumbnail'> & { thumbnail: StoredBytes | Blo
 let dbPromise: Promise<IDBDatabase> | null = null;
 let chain: Promise<unknown> = Promise.resolve();
 
+const OP_TIMEOUT_MS = 30000;
+const OPEN_TIMEOUT_MS = 4000;
+
+function withTimeout<T>(work: Promise<T>, ms: number, message: string, onTimeout?: () => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      onTimeout?.();
+      reject(new Error(message));
+    }, ms);
+    work.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        window.clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 function enqueue<T>(fn: () => Promise<T>): Promise<T> {
-  const run = chain.then(fn, fn);
+  const guarded = () =>
+    withTimeout(fn(), OP_TIMEOUT_MS, 'Storage did not respond. Close Swingframe fully and open it again.', () => {
+      dbPromise = null;
+    });
+  const run = chain.then(guarded, guarded);
   chain = run.then(
     () => undefined,
     () => undefined,
@@ -24,17 +50,26 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-function openDB(): Promise<IDBDatabase> {
-  return openRaw().then((db) => {
+async function openGuarded(): Promise<IDBDatabase> {
+  return withTimeout(openRaw(), OPEN_TIMEOUT_MS, 'Storage is slow to open.', () => {
+    dbPromise = null;
+  });
+}
+
+async function openDB(): Promise<IDBDatabase> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
+      const db = await openGuarded();
       // iOS closes the connection when the app is backgrounded. Probe it and reopen if it is closed.
       db.transaction('swings', 'readonly');
       return db;
-    } catch {
+    } catch (err) {
+      lastErr = err;
       dbPromise = null;
-      return openRaw();
     }
-  });
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('Could not open on-device storage.');
 }
 
 function openRaw(): Promise<IDBDatabase> {
@@ -179,7 +214,7 @@ let bytesReady: Promise<void> | null = null;
 
 function ensureStoredBytes(): Promise<void> {
   if (!bytesReady) {
-    bytesReady = rewriteBlobValues().catch(() => {
+    bytesReady = withTimeout(rewriteBlobValues(), 20000, 'Storage upgrade timed out.').catch(() => {
       bytesReady = null;
     });
   }
