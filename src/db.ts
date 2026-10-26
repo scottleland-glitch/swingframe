@@ -25,6 +25,19 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 function openDB(): Promise<IDBDatabase> {
+  return openRaw().then((db) => {
+    try {
+      // iOS closes the connection when the app is backgrounded. Probe it and reopen if it is closed.
+      db.transaction('swings', 'readonly');
+      return db;
+    } catch {
+      dbPromise = null;
+      return openRaw();
+    }
+  });
+}
+
+function openRaw(): Promise<IDBDatabase> {
   if (typeof indexedDB === 'undefined') {
     return Promise.reject(new Error('This browser cannot store videos on the device.'));
   }
@@ -40,7 +53,17 @@ function openDB(): Promise<IDBDatabase> {
           db.createObjectStore('videos');
         }
       };
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const db = req.result;
+        db.onclose = () => {
+          dbPromise = null;
+        };
+        db.onversionchange = () => {
+          db.close();
+          dbPromise = null;
+        };
+        resolve(db);
+      };
       req.onerror = () => {
         dbPromise = null;
         reject(req.error ?? new Error('Could not open on-device storage.'));
