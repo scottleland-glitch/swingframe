@@ -95,10 +95,12 @@ function useClock(engine: RefObject<VideoEngine | null>) {
 export function PlayerView({
   id,
   onBack,
+  justSaved = false,
   onChanged,
 }: {
   id: string;
   onBack: () => void;
+  justSaved?: boolean;
   onChanged: () => void;
 }) {
   const { swing, blob, drawings, pastCount, load, saveError, commit, undo, patch, reload } = useSwing(id);
@@ -113,6 +115,12 @@ export function PlayerView({
   const [holding, setHolding] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [savedNote, setSavedNote] = useState(justSaved);
+  useEffect(() => {
+    if (!savedNote) return;
+    const timer = window.setTimeout(() => setSavedNote(false), 8000);
+    return () => window.clearTimeout(timer);
+  }, [savedNote]);
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmFree, setConfirmFree] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
@@ -1480,6 +1488,21 @@ export function PlayerView({
       )}
 
       {pinch && <p className="pinch-banner">Drag to pan. Use two fingers to zoom. Tap the pencil to draw.</p>}
+      {savedNote && swing && (
+        <div className="saved-note" role="status" data-testid="saved-note">
+          <span>Saved to History</span>
+          <button
+            type="button"
+            data-testid="saved-note-remove"
+            onClick={() => {
+              setSavedNote(false);
+              setConfirmDelete(true);
+            }}
+          >
+            Remove
+          </button>
+        </div>
+      )}
       {(saveError || playError) && <p className="player-banner">{saveError || playError}</p>}
 
       <div className="player-bar" ref={setBarNode}>
