@@ -213,6 +213,7 @@ export const VideoStage = forwardRef<
   const immersiveRef = useRef(immersive);
   const onExitImmersiveRef = useRef(onExitImmersive);
   const pressRef = useRef<{ x: number; y: number } | null>(null);
+  const pressTimeRef = useRef(0);
   const manualRef = useRef(false);
   const manualTimer = useRef<number | null>(null);
   const wakeRef = useRef<WakeLockSentinel | null>(null);
@@ -1275,6 +1276,7 @@ export const VideoStage = forwardRef<
           return;
         }
         pressRef.current = { x: event.clientX, y: event.clientY };
+        pressTimeRef.current = Date.now();
         event.currentTarget.setPointerCapture(event.pointerId);
         pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
         if (pointers.current.size >= 2) {
@@ -1340,6 +1342,33 @@ export const VideoStage = forwardRef<
             setCursor(null);
             onExitImmersiveRef.current?.();
             return;
+          }
+        }
+        // A quick one-finger tap on a finished drawing with a drawing tool removes it (a fast undo).
+        if (
+          press &&
+          TWO_FINGER_TOOLS.includes(toolRef.current) &&
+          !panModeRef.current &&
+          !calibrateRef.current &&
+          pointers.current.size <= 1 &&
+          !twoRef.current &&
+          !pinchRef.current &&
+          !suppress.current &&
+          Date.now() - pressTimeRef.current < 500 &&
+          Math.hypot(event.clientX - press.x, event.clientY - press.y) < 10
+        ) {
+          const rect = canvasRect();
+          const p = normFromClient(event.clientX, event.clientY);
+          if (rect && p && onVideo(event.clientX, event.clientY, p)) {
+            const hit = hitTest(drawingsRef.current, p, rect.width, rect.height, null);
+            if (hit) {
+              pointers.current.delete(event.pointerId);
+              dragRef.current = null;
+              setCursor(null);
+              onCommitRef.current(drawingsRef.current.filter((drawing) => drawing.id !== hit.id));
+              onSelectRef.current(null);
+              return;
+            }
           }
         }
         pointers.current.delete(event.pointerId);

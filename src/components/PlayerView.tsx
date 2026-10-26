@@ -30,7 +30,7 @@ import { VideoStage, type VideoEngine } from './VideoStage';
 
 const HINTS: Record<Tool, string> = {
   select: 'Two fingers move, pinch, or turn a drawing. Drag a white handle with one finger to fine-tune.',
-  line: 'Two fingers. Each finger is one end of the line. It extends across the frame.',
+  line: 'Two fingers. Each finger is one end of the line. Tap a drawing to remove it.',
   pen: 'Two fingers. The stroke follows the point between them.',
   angle: 'Two fingers set the arms. The joint sits halfway between them.',
   circle: 'Two fingers. Pinch to size the circle, drag to place it.',
