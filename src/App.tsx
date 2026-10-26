@@ -89,9 +89,16 @@ export function App() {
       {adding && (
         <AddSwingSheet
           onClose={closeAdd}
-          onSaved={() => {
+          onSaved={(id) => {
             setVersion((value) => value + 1);
-            closeAdd();
+            // Open the saved swing right away. Replace the add-sheet history entry so Back returns to where they started.
+            const next: Route = { name: 'player', id };
+            const state = window.history.state as Partial<Hist> | null;
+            const hist: Hist = { route: next, adding: false };
+            if (state?.adding) window.history.replaceState(hist, '');
+            else window.history.pushState(hist, '');
+            setRoute(next);
+            setAdding(false);
           }}
         />
       )}

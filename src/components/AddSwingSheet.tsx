@@ -26,7 +26,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 import { Icon } from './Icons';
 import { ViewPicker } from './ViewPicker';
 
-export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSaved: (id: string) => void }) {
   const alive = useRef(true);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -152,7 +152,7 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
     try {
       await saveSwing(meta, file);
       if (!alive.current) return;
-      onSaved();
+      onSaved(meta.id);
     } catch (err) {
       if (!alive.current) return;
       setError(isQuotaError(err) ? quotaMessage() : errorMessage(err, 'Could not save that swing.'));
