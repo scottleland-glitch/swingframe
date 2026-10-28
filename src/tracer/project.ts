@@ -142,6 +142,67 @@ export function groundScreenY(camera: TracerCamera, ballY: number, carryMeters: 
   return Math.min(0.92, Math.max(0.05, pixel.y / 1000));
 }
 
+/**
+ * Yaw of the camera about the vertical so the ground line from the ball (world +Z) lands on the line from the
+ * ball tap to the aim tap. This is a real turn of the world under a real camera, so lateral distance keeps its
+ * true perspective size. Only the aim taps set it. Launch and spin never do.
+ */
+function aimYaw(frame: Frame, ball: Pt, target: Pt, width: number, height: number): number | null {
+  const origin = projectRaw({ t: 0, x: 0, y: 0, z: 0 }, frame, width, height);
+  if (!origin) return null;
+  const wantX = (target.x - ball.x) * width;
+  const wantY = (target.y - ball.y) * height;
+  if (Math.hypot(wantX, wantY) < 4) return 0;
+  const want = Math.atan2(wantY, wantX);
+  const error = (yaw: number): number | null => {
+    const far = projectRaw({ t: 0, x: 200 * Math.sin(yaw), y: 0, z: 200 * Math.cos(yaw) }, frame, width, height);
+    if (!far) return null;
+    const dx = far.x - origin.x;
+    const dy = far.y - origin.y;
+    if (Math.hypot(dx, dy) < 1e-6) return null;
+    let d = Math.atan2(dy, dx) - want;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    return d;
+  };
+  let best = 0;
+  let bestErr = Math.abs(error(0) ?? Math.PI);
+  let prev: { yaw: number; err: number } | null = null;
+  let bracket: [number, number] | null = null;
+  for (let i = 0; i <= 140; i++) {
+    const yaw = -1.4 + (2.8 * i) / 140;
+    const err = error(yaw);
+    if (err == null) {
+      prev = null;
+      continue;
+    }
+    if (Math.abs(err) < bestErr) {
+      bestErr = Math.abs(err);
+      best = yaw;
+    }
+    if (prev && prev.err * err <= 0 && Math.abs(prev.err - err) < 1) {
+      if (!bracket || Math.abs(prev.yaw) < Math.abs(bracket[0])) bracket = [prev.yaw, yaw];
+    }
+    prev = { yaw, err };
+  }
+  if (bracket) {
+    let [a, b] = bracket;
+    let eA = error(a) ?? 0;
+    for (let i = 0; i < 30; i++) {
+      const mid = (a + b) / 2;
+      const e = error(mid);
+      if (e == null) break;
+      if (eA * e <= 0) b = mid;
+      else {
+        a = mid;
+        eA = e;
+      }
+    }
+    best = (a + b) / 2;
+  }
+  return best;
+}
+
 function projectMapped(
   samples: FlightSample[],
   camera: TracerCamera,
@@ -152,6 +213,23 @@ function projectMapped(
   height: number,
 ): TracerPoint[] {
   if (samples.length < 2 || width < 2 || height < 2) return [];
+  if (camera.view === 'dtl') {
+    // Every sample is placed with its real sideways distance from the aim line. The camera is yawed so the
+    // aim line points at the aim tap, and nothing about the shot is fitted to land on it.
+    const yaw = aimYaw(frame, ball, target, width, height);
+    const start = projectRaw({ t: 0, x: 0, y: 0, z: 0 }, frame, width, height);
+    if (yaw == null || !start) return [];
+    const c = Math.cos(yaw);
+    const sn = Math.sin(yaw);
+    const out: TracerPoint[] = [];
+    for (const sample of samples) {
+      const world = { ...sample, x: sample.x * c + sample.z * sn, z: -sample.x * sn + sample.z * c };
+      const pixel = projectRaw(world, frame, width, height);
+      if (!pixel) continue;
+      out.push({ x: (ball.x * width + pixel.x - start.x) / width, y: (ball.y * height + pixel.y - start.y) / height, t: sample.t });
+    }
+    return out.length >= 2 ? out : [];
+  }
   const turn = aimTurn(frame, ball, target, width, height);
   if (!turn) return [];
   const ballX = ball.x * width;
@@ -164,7 +242,7 @@ function projectMapped(
   // follows the world curve instead of the airborne radius. That radius
   // shrinks on the way down and was pulling a fade back toward center.
   let curveScale = 0;
-  if (camera.view === 'dtl') {
+  if ((camera.view as string) === 'dtl') {
     const last = samples[samples.length - 1];
     const endPixel = projectRaw({ ...last, x: 0 }, frame, width, height);
     if (endPixel) {
@@ -184,7 +262,7 @@ function projectMapped(
     // onto the launch direction. Spin is the distance off that line. It is
     // not solved so the stroke can pass through the aim point or the horizon.
     // Face on keeps a plain projection of the real sample.
-    const source = camera.view === 'dtl' ? { ...sample, x: 0 } : sample;
+    const source = sample;
     const pixel = projectRaw(source, frame, width, height);
     if (!pixel) continue;
     const rawX = pixel.x - turn.ox;
@@ -193,7 +271,7 @@ function projectMapped(
     const aimedY = rawX * turn.sin + rawY * turn.cos;
     let px = aimedX;
     let py = aimedY;
-    if (camera.view === 'dtl') {
+    if ((camera.view as string) === 'dtl') {
       px = aimedX * headCos - aimedY * headSin;
       py = aimedX * headSin + aimedY * headCos;
       const len = Math.hypot(px, py);
