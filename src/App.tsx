@@ -26,7 +26,6 @@ export function App() {
   const [route, setRoute] = useState<Route>(initial.route);
   const [adding, setAdding] = useState(initial.adding);
   const [version, setVersion] = useState(0);
-  const [savedId, setSavedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isRoute((window.history.state as Partial<Hist> | null)?.route)) {
@@ -85,14 +84,13 @@ export function App() {
         />
       )}
       {route.name === 'player' && (
-        <PlayerView key={route.id} id={route.id} justSaved={savedId === route.id} onBack={back} onChanged={() => setVersion((value) => value + 1)} />
+        <PlayerView key={route.id} id={route.id} onBack={back} onChanged={() => setVersion((value) => value + 1)} />
       )}
       {adding && (
         <AddSwingSheet
           onClose={closeAdd}
           onSaved={(id) => {
             setVersion((value) => value + 1);
-            setSavedId(id);
             // Open the saved swing right away. Replace the add-sheet history entry so Back returns to where they started.
             const next: Route = { name: 'player', id };
             const state = window.history.state as Partial<Hist> | null;

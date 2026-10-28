@@ -1538,3 +1538,28 @@ textarea { resize: vertical; }
   color: #f4f7fb;
   font-size: 13px;
 }
+
+.keep-bar {
+  position: absolute;
+  z-index: 30;
+  right: calc(14px + var(--safe-right));
+  bottom: calc(var(--player-bar-height) + 14px);
+  display: flex;
+  gap: 10px;
+}
+.keep-pill {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  padding: 11px 20px;
+  min-height: 44px;
+  background: rgba(20, 28, 44, 0.6);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  color: #f4f7fb;
+  font-size: 15px;
+  font-weight: 600;
+}
+.keep-pill.keep-yes {
+  background: rgba(190, 235, 60, 0.28);
+  border-color: rgba(210, 245, 90, 0.7);
+}

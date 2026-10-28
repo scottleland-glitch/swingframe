@@ -152,6 +152,8 @@ export interface SwingMeta {
   drive?: DriveLink | null;
   /** False after Free up space removes the local video. Absent means the video should still be here. */
   videoKept?: boolean;
+  /** True until the user taps Keep. A draft is a new swing still being annotated. */
+  draft?: boolean;
   /** Launch-monitor numbers for the shot tracer. */
   shot?: ShotData | null;
   /** Ball, target, impact, and camera nudge for the tracer. */

@@ -95,12 +95,10 @@ function useClock(engine: RefObject<VideoEngine | null>) {
 export function PlayerView({
   id,
   onBack,
-  justSaved = false,
   onChanged,
 }: {
   id: string;
   onBack: () => void;
-  justSaved?: boolean;
   onChanged: () => void;
 }) {
   const { swing, blob, drawings, pastCount, load, saveError, commit, undo, patch, reload } = useSwing(id);
@@ -115,10 +113,10 @@ export function PlayerView({
   const [holding, setHolding] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [savedNote, setSavedNote] = useState(justSaved);
+  const [savedNote, setSavedNote] = useState(false);
   useEffect(() => {
     if (!savedNote) return;
-    const timer = window.setTimeout(() => setSavedNote(false), 8000);
+    const timer = window.setTimeout(() => setSavedNote(false), 3000);
     return () => window.clearTimeout(timer);
   }, [savedNote]);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -1488,18 +1486,32 @@ export function PlayerView({
       )}
 
       {pinch && <p className="pinch-banner">Drag to pan. Use two fingers to zoom. Tap the pencil to draw.</p>}
-      {savedNote && swing && (
+      {savedNote && (
         <div className="saved-note" role="status" data-testid="saved-note">
-          <span>Saved to History</span>
+          <span>Added to History</span>
+        </div>
+      )}
+      {swing?.draft && load.status === 'ready' && (
+        <div className="keep-bar" data-testid="keep-bar">
+          <button type="button" className="keep-pill" data-testid="discard-swing" onClick={() => setConfirmDelete(true)}>
+            Discard
+          </button>
           <button
             type="button"
-            data-testid="saved-note-remove"
+            className="keep-pill keep-yes"
+            data-testid="keep-swing"
             onClick={() => {
-              setSavedNote(false);
-              setConfirmDelete(true);
+              void patch({ draft: false })
+                .then(() => {
+                  setSavedNote(true);
+                  onChanged();
+                })
+                .catch((err: unknown) => {
+                  setPlayError(err instanceof Error ? err.message : 'Could not keep the swing.');
+                });
             }}
           >
-            Remove
+            Keep
           </button>
         </div>
       )}

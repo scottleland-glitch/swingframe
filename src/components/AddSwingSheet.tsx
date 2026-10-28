@@ -148,6 +148,7 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
       byteSize: file.size,
       thumbnail: probe?.thumbnail ?? null,
       drawings: [],
+      draft: true,
     };
     try {
       await saveSwing(meta, file);

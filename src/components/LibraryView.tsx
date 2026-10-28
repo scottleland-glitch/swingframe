@@ -495,7 +495,10 @@ function SwingRow({
       >
         <Thumb swing={swing} />
         <span className="swing-copy">
-          <span className="swing-title">{swing.club || 'Club not set'}</span>
+          <span className="swing-title">
+            {swing.club || 'Club not set'}
+            {swing.draft ? ' · Not kept' : ''}
+          </span>
           <span className="swing-meta">
             {formatDate(swing.date)} · {formatDuration(swing.duration)}
             {swing.drawings.length > 0 ? ` · ${swing.drawings.length} drawn` : ''}
