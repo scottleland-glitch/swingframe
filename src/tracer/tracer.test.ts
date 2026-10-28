@@ -688,6 +688,31 @@ describe('descent keeps bending away from the start line', () => {
   });
 });
 
+describe('start direction and spin axis', () => {
+  const base = { ...emptyShot(), ballSpeed: 147, vla: 24, spin: 3560 };
+  const run = (hla: number, spinAxis: number) => simulateShot({ ...base, hla, spinAxis })!;
+  it('a zero spin axis flies a straight line along the start direction, whatever the start direction', () => {
+    for (const hla of [-8, -3, 0, 6, 10]) {
+      const flight = run(hla, 0);
+      const last = flight.samples.at(-1)!;
+      const startDeg = (Math.atan2(last.x, last.z) * 180) / Math.PI;
+      expect(startDeg).toBeCloseTo(hla, 0);
+    }
+  });
+  it('a left spin axis off a right start curves left of the straight line by the same amount as a straight start', () => {
+    const straight = run(0, -4).curveYd - run(0, 0).curveYd;
+    const offLine = run(6, -4).curveYd - run(6, 0).curveYd;
+    expect(straight).toBeLessThan(-8);
+    expect(offLine).toBeCloseTo(straight, 0);
+    const path = run(6, -4).samples;
+    const mid = path[Math.floor(path.length / 2)];
+    const end = path.at(-1)!;
+    const startLine = Math.tan((6 * Math.PI) / 180);
+    expect(end.x / end.z).toBeLessThan(startLine - 0.03);
+    expect(mid.x / mid.z).toBeGreaterThan(end.x / end.z);
+  });
+});
+
 describe('version 29 tracer picture', () => {
   it('matches the v29 flight for a 2° left, 40° right driver', () => {
     const flight = simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, hla: -2, spin: 2500, spinAxis: 40 })!;
@@ -699,15 +724,15 @@ describe('version 29 tracer picture', () => {
     const bare = projectFlight(flight.samples, camera, ball, aim, 1080, 1920);
     let apex = 0;
     for (let i = 1; i < path.length; i++) if (path[i].y < path[apex].y) apex = i;
-    expect(flight.carryYd).toBeCloseTo(226.9865, 3);
-    expect(flight.curveYd).toBeCloseTo(54.6206, 3);
-    expect(path).toHaveLength(260);
-    expect(path.at(-1)!.x).toBeCloseTo(0.615615, 5);
-    expect(path.at(-1)!.y).toBeCloseTo(0.517682, 5);
-    expect(path.at(-1)!.t).toBeCloseTo(5.1603, 3);
-    expect(path[apex].x).toBeCloseTo(0.488566, 5);
-    expect(path[apex].y).toBeCloseTo(0.394908, 5);
-    expect(bare.at(-1)!.y).toBeCloseTo(0.444167, 5);
+    expect(flight.carryYd).toBeCloseTo(226.537, 3);
+    expect(flight.curveYd).toBeCloseTo(54.75, 2);
+    expect(path).toHaveLength(259);
+    expect(path.at(-1)!.x).toBeCloseTo(0.616154, 5);
+    expect(path.at(-1)!.y).toBeCloseTo(0.517672, 5);
+    expect(path.at(-1)!.t).toBeCloseTo(5.14395, 3);
+    expect(path[apex].x).toBeCloseTo(0.488675, 5);
+    expect(path[apex].y).toBeCloseTo(0.395093, 5);
+    expect(bare.at(-1)!.y).toBeCloseTo(0.444168, 5);
     expect(projectFlight(flight.samples, camera, ball, aim, 1080, 1920, { x: 0.9, y: ground.y })).toEqual(path);
   });
 });

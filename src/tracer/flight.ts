@@ -156,9 +156,12 @@ export function simulateShot(shot: ShotData): FlightResult | null {
   const hla = ((shot.hla ?? 0) * Math.PI) / 180;
   const axis = (axisDegrees(shot) * Math.PI) / 180;
   const omega = (Math.max(0, shot.spin) * 2 * Math.PI) / 60;
-  let wx = -omega * Math.cos(axis);
+  // The spin axis is tilted from level, measured across the launch direction. Backspin is level and square to
+  // the start line, so it turns with the launch direction. A fixed world axis leaks gyro spin into every shot
+  // that does not start dead on the aim line, and that pushes the ball sideways with no spin axis at all.
+  let wx = -omega * Math.cos(axis) * Math.cos(hla);
   let wy = omega * Math.sin(axis);
-  let wz = 0;
+  let wz = omega * Math.cos(axis) * Math.sin(hla);
   const spinDecay = Math.exp(-STEP / SPIN_TAU);
 
   let state: V6 = [
