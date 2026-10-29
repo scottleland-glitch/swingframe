@@ -225,14 +225,6 @@ function readAllKeyed(store: IDBObjectStore): Promise<{ key: IDBValidKey; value:
   });
 }
 
-function readAllKeys(store: IDBObjectStore): Promise<IDBValidKey[]> {
-  return new Promise((resolve, reject) => {
-    const req = store.getAllKeys();
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error('Could not read saved swings.'));
-  });
-}
-
 /**
  * Older builds stored Blob values. iOS drops those records when the Home
  * Screen app closes, so rewrite any that are still readable into bytes.
@@ -254,7 +246,7 @@ function ensureStoredBytes(): Promise<void> {
   if (bytesFlagSet()) return Promise.resolve();
   if (!bytesReady) {
     dbLog('upgrade check running');
-    bytesReady = withTimeout(rewriteBlobValues(), 20000, 'Storage upgrade timed out.')
+    bytesReady = withTimeout(rewriteBlobValues(), 8000, 'Storage upgrade timed out.')
       .then(() => {
         try {
           window.localStorage.setItem(BYTES_FLAG, '1');
@@ -263,8 +255,8 @@ function ensureStoredBytes(): Promise<void> {
         }
       })
       .catch((err: unknown) => {
+        // Do not retry this session. Every storage call would otherwise wait on it again.
         dbLog(`upgrade check failed: ${err instanceof Error ? err.message : String(err)}`);
-        bytesReady = null;
       });
   }
   return bytesReady;
@@ -274,7 +266,6 @@ async function rewriteBlobValues(): Promise<void> {
   const db = await openDB();
   const readTx = db.transaction(['swings', 'videos'], 'readonly');
   const swings = await readAllKeyed(readTx.objectStore('swings'));
-  const videoKeys = await readAllKeys(readTx.objectStore('videos'));
   await txDone(readTx, 'Could not read swings.');
 
   const swingPuts: StoredSwing[] = [];
@@ -294,17 +285,8 @@ async function rewriteBlobValues(): Promise<void> {
     swingPuts.push({ ...rec, thumbnail });
   }
 
+  // Saved videos are never read here. A Blob video is still played as is, and reading every video on launch stalls the phone.
   const videoPuts: { key: IDBValidKey; value: StoredBytes }[] = [];
-  for (const key of videoKeys) {
-    // One video at a time, so a long list never sits in memory together.
-    const one = db.transaction('videos', 'readonly');
-    const value = await readStore<unknown>(one.objectStore('videos'), key);
-    await txDone(one, 'Could not read swings.');
-    if (!(value instanceof Blob) || value.size === 0) continue;
-    const stored = await toStoredBytes(value, value.type || 'video/mp4');
-    if (stored.bytes.byteLength === 0) continue;
-    videoPuts.push({ key, value: stored });
-  }
 
   if (swingPuts.length === 0 && videoPuts.length === 0) return;
   const writeTx = db.transaction(['swings', 'videos'], 'readwrite');

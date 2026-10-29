@@ -46,13 +46,17 @@ export function LibraryView({
   const [revealedId, setRevealedId] = useState<string | null>(null);
   const [driveOpen, setDriveOpen] = useState(false);
   const [usage, setUsage] = useState<number | null>(null);
+  const [listed, setListed] = useState(false);
   const [hideInstall, setHideInstall] = useState(() => storageGet('swingframe.install.v1') === '1');
 
   useEffect(() => {
     let cancel = false;
     void listSwings()
       .then((rows) => {
-        if (!cancel) setSwings(rows);
+        if (!cancel) {
+          setSwings(rows);
+          setListed(true);
+        }
       })
       .catch((err: unknown) => {
         if (!cancel) setError(err instanceof Error ? err.message : 'Could not read saved swings.');
@@ -262,7 +266,11 @@ export function LibraryView({
         )}
         {error && <p className="banner">{error}</p>}
         {selecting && <p className="pick-hint">Tap the swings to delete, then Delete.</p>}
-        {visible.length === 0 ? (
+        {!listed && !error && swings.length === 0 ? (
+          <div className="empty">
+            <p>Loading your swings…</p>
+          </div>
+        ) : visible.length === 0 ? (
           <div className="empty">
             <span className="brand-mark big" aria-hidden="true">
               <Icon name="line" />
