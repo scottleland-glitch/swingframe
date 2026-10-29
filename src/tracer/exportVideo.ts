@@ -211,10 +211,20 @@ export async function recordTracerVideo(request: ExportRequest): Promise<ExportR
       request.signal?.addEventListener('abort', stop, { once: true });
       const started = performance.now();
       let parkedPicture = false;
+      let holdFrom: number | null = null;
       const tick = () => {
         if (request.signal?.aborted) return;
-        const t = span.start + (performance.now() - started) / 1000;
-        if (video.currentTime >= pictureEnd - 0.04 || video.ended) {
+        const now = performance.now();
+        const pictureDone = video.currentTime >= pictureEnd - 0.04 || video.ended;
+        if (pictureDone && holdFrom == null) holdFrom = now;
+        // The tracer follows the picture's own time, as in the player, so a slow start or a stall in the recording cannot shift it.
+        // Only the hold after the last frame runs on the wall clock.
+        const t = pictureDone ? pictureEnd + (now - (holdFrom ?? now)) / 1000 : Math.max(span.start, video.currentTime);
+        if ((now - started) / 1000 > (span.end - span.start) * 3 + 8) {
+          stop();
+          return;
+        }
+        if (pictureDone) {
           video.pause();
           if (!parkedPicture && video.currentTime > pictureEnd + 0.04) {
             parkedPicture = true;
