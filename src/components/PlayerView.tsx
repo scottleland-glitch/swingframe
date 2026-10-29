@@ -430,7 +430,7 @@ export function PlayerView({
   }, [swing?.slowMo, swing?.fps]);
 
   const projectFor = useCallback(
-    (cal: TracerCalibration) => {
+    (cal: TracerCalibration, playRate: number = rate) => {
       // Manual is the only mode that uses the three-point spline. A numbered flight never does.
       if (cal.mode === 'manual') {
         if (!cal.manualStart || !cal.manualApex || !cal.manualFinish) return null;
@@ -454,9 +454,11 @@ export function PlayerView({
         cal.ground,
       );
       // Flight time is real seconds. A slow-motion clip stretches the golfer, so the ball stretches with it.
-      return slowFactor === 1 ? real : real.map((point) => ({ ...point, t: point.t * slowFactor }));
+      // The ball keeps its own pace at any playback speed, so a faster video stretches the flight in clip time.
+      const scale = slowFactor * (playRate > 0 ? playRate : 1);
+      return scale === 1 ? real : real.map((point) => ({ ...point, t: point.t * scale }));
     },
-    [swing?.view, swing?.videoWidth, swing?.videoHeight, activeShot, slowFactor],
+    [swing?.view, swing?.videoWidth, swing?.videoHeight, activeShot, slowFactor, rate],
   );
 
   const tracerPath = useMemo(() => projectFor(activeCal), [projectFor, activeCal]);
@@ -465,6 +467,8 @@ export function PlayerView({
     [placedCal, activeCal, tracerPath, projectFor],
   );
 
+  const exportPath = useMemo(() => projectFor(activeCal, 1), [projectFor, activeCal]);
+  const exportFlight = exportPath?.length ? exportPath[exportPath.length - 1].t : 0;
   const tracerFlight = tracerPath?.length ? tracerPath[tracerPath.length - 1].t : 0;
   flightRef.current = tracerFlight;
   const tuningTracer =
@@ -1189,13 +1193,13 @@ export function PlayerView({
       blob,
       drawings,
       impactTime: activeCal.impactTime,
-      flightTime: tracerFlight,
+      flightTime: exportFlight,
       clipStart: trimIn ?? 0,
       clipEnd: trimOut ?? swing.duration ?? 0,
       videoWidth: swing.videoWidth || 0,
       videoHeight: swing.videoHeight || 0,
       marks: setupPhase === 'edit' ? null : showAimMarks(activeCal),
-      tracerPath: activeCal.showTracer !== false ? tracerPath : null,
+      tracerPath: activeCal.showTracer !== false ? exportPath : null,
       signal: controller.signal,
       onProgress: (fraction) => setExportProgress(fraction),
     })
