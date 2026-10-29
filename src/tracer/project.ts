@@ -152,55 +152,21 @@ function aimYaw(frame: Frame, ball: Pt, target: Pt, width: number, height: numbe
   if (!origin) return null;
   const wantX = (target.x - ball.x) * width;
   const wantY = (target.y - ball.y) * height;
-  if (Math.hypot(wantX, wantY) < 4) return 0;
-  const want = Math.atan2(wantY, wantX);
-  const error = (yaw: number): number | null => {
-    const far = projectRaw({ t: 0, x: 200 * Math.sin(yaw), y: 0, z: 200 * Math.cos(yaw) }, frame, width, height);
-    if (!far) return null;
-    const dx = far.x - origin.x;
-    const dy = far.y - origin.y;
-    if (Math.hypot(dx, dy) < 1e-6) return null;
-    let d = Math.atan2(dy, dx) - want;
-    while (d > Math.PI) d -= 2 * Math.PI;
-    while (d < -Math.PI) d += 2 * Math.PI;
-    return d;
-  };
-  let best = 0;
-  let bestErr = Math.abs(error(0) ?? Math.PI);
-  let prev: { yaw: number; err: number } | null = null;
-  let bracket: [number, number] | null = null;
-  for (let i = 0; i <= 140; i++) {
-    const yaw = -1.4 + (2.8 * i) / 140;
-    const err = error(yaw);
-    if (err == null) {
-      prev = null;
-      continue;
-    }
-    if (Math.abs(err) < bestErr) {
-      bestErr = Math.abs(err);
-      best = yaw;
-    }
-    if (prev && prev.err * err <= 0 && Math.abs(prev.err - err) < 1) {
-      if (!bracket || Math.abs(prev.yaw) < Math.abs(bracket[0])) bracket = [prev.yaw, yaw];
-    }
-    prev = { yaw, err };
+  if (!Number.isFinite(wantX) || !Number.isFinite(wantY) || Math.hypot(wantX, wantY) < 4) return 0;
+  // Far down a ground line the picture heads for that line's vanishing point. The horizon sits at one
+  // height, so the aim direction fixes where along the horizon the aim line vanishes, and that is the yaw.
+  // No search: this runs on every drag of the aim point.
+  const focal = focalLength(frame.fov, height);
+  const cosPitch = Math.max(0.05, frame.forward.z);
+  const horizonY = height / 2 - focal * (frame.up.z / cosPitch);
+  const rise = horizonY - origin.y;
+  const limit = 1.4;
+  if (Math.abs(rise) < 1e-6 || wantY * rise <= 0 || Math.abs(wantY) < 1e-6) {
+    return wantX < 0 ? -limit : limit;
   }
-  if (bracket) {
-    let [a, b] = bracket;
-    let eA = error(a) ?? 0;
-    for (let i = 0; i < 30; i++) {
-      const mid = (a + b) / 2;
-      const e = error(mid);
-      if (e == null) break;
-      if (eA * e <= 0) b = mid;
-      else {
-        a = mid;
-        eA = e;
-      }
-    }
-    best = (a + b) / 2;
-  }
-  return best;
+  const vanishX = origin.x + rise * (wantX / wantY);
+  const yaw = Math.atan(((vanishX - width / 2) * cosPitch) / focal);
+  return Math.min(limit, Math.max(-limit, yaw));
 }
 
 function projectMapped(

@@ -97,12 +97,11 @@ async function landmarker(base: string): Promise<Landmarker | null> {
           minPoseDetectionConfidence: 0.4,
           minPosePresenceConfidence: 0.4,
         };
+        // CPU only. The phone's GPU path has hung the whole page while the aim point was up.
         const created = await PoseLandmarker.createFromOptions(vision, {
           ...options,
-          baseOptions: { ...options.baseOptions, delegate: 'GPU' },
-        }).catch(() =>
-          PoseLandmarker.createFromOptions(vision, { ...options, baseOptions: { ...options.baseOptions, delegate: 'CPU' } }),
-        );
+          baseOptions: { ...options.baseOptions, delegate: 'CPU' },
+        });
         return {
           detect: (image: HTMLCanvasElement) => created.detect(image),
         };
