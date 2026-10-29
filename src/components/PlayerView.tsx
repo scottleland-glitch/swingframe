@@ -157,6 +157,7 @@ export function PlayerView({
   const [tracerCal, setTracerCal] = useState<TracerCalibration | null>(null);
   const [impactBusy, setImpactBusy] = useState(false);
   const [tracerNote, setTracerNote] = useState<string | null>(null);
+  const [exportNote, setExportNote] = useState<string | null>(null);
   const [immersive, setImmersive] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
@@ -1228,11 +1229,15 @@ export function PlayerView({
         const extension = result.mime.includes('webm') ? 'webm' : 'mp4';
         const offered = await offerRecording(result.blob, `swingframe-tracer.${extension}`);
         if (controller.signal.aborted) return;
-        setTracerNote(offered === 'downloaded' ? `${result.note} A download started.` : result.note);
+        const done = offered === 'downloaded' ? `${result.note} A download started.` : result.note;
+        setTracerNote(done);
+        if (offered !== 'cancelled') setExportNote(done);
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setTracerNote(error instanceof Error ? error.message : 'Export failed.');
+        const failed = error instanceof Error ? error.message : 'Export failed.';
+        setTracerNote(failed);
+        setExportNote(failed);
       })
       .finally(() => {
         if (exportAbort.current === controller) exportAbort.current = null;
@@ -1549,6 +1554,11 @@ export function PlayerView({
         </div>
       )}
       {(saveError || playError) && <p className="player-banner">{saveError || playError}</p>}
+      {exportNote && !exporting && (
+        <p className="player-banner" data-testid="export-note" onClick={() => setExportNote(null)}>
+          {exportNote} Tap to dismiss.
+        </p>
+      )}
 
       <div className="player-bar" ref={setBarNode}>
         {showImpactChip && activeCal.locked !== true && (
@@ -1561,6 +1571,16 @@ export function PlayerView({
         <div className="bar-meta">
           <button type="button" className="speed-pill" data-testid="speed-pill" aria-label="Playback speed" onClick={cycleRate}>
             {formatRate(rate)}
+          </button>
+          <button
+            type="button"
+            className="speed-pill"
+            data-testid="export-clean"
+            aria-label="Export a clean video to share"
+            disabled={exporting}
+            onClick={startExport}
+          >
+            {exporting ? '…' : 'Export'}
           </button>
           <button
             type="button"
