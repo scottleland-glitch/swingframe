@@ -138,6 +138,8 @@ export interface SwingMeta {
   videoHeight: number;
   /** Assumed frames per second, used only for frame-step size. */
   fps: number;
+  /** How many times slower than real life the clip plays. Missing: 1, or fps over 30 for a 120 or 240 fps clip. */
+  slowMo?: number | null;
   /** Playback window, in seconds. Missing means the whole clip. */
   trimIn?: number | null;
   trimOut?: number | null;

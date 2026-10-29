@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { DRAW_COLORS, FPS_OPTIONS, SPEEDS } from '../constants';
+import { DRAW_COLORS, FPS_OPTIONS, SLOWMO_OPTIONS, SPEEDS } from '../constants';
 import { deleteSwing, getVideo, listSwings, releaseLocalVideo } from '../db';
 import { backupSwing, downloadSwingVideo } from '../driveApi';
 import { DRIVE_ENABLED } from '../driveConfig';
@@ -422,6 +422,13 @@ export function PlayerView({
     return { ...activeCal, mode: 'manual' as const, manualFinish: draftPoint };
   }, [activeCal, draftPoint, setupPhase]);
 
+  const slowFactor = useMemo(() => {
+    const set = swing?.slowMo;
+    if (typeof set === 'number' && set >= 1) return set;
+    const f = swing?.fps ?? 60;
+    return f >= 120 ? f / 30 : 1;
+  }, [swing?.slowMo, swing?.fps]);
+
   const projectFor = useCallback(
     (cal: TracerCalibration) => {
       // Manual is the only mode that uses the three-point spline. A numbered flight never does.
@@ -432,7 +439,7 @@ export function PlayerView({
       if (!swing?.view || !cal.ball || !cal.target) return null;
       const flight = simulateShot(activeShot);
       if (!flight) return null;
-      return projectFlight(
+      const real = projectFlight(
         flight.samples,
         {
           view: swing.view,
@@ -446,8 +453,10 @@ export function PlayerView({
         swing.videoHeight || 16,
         cal.ground,
       );
+      // Flight time is real seconds. A slow-motion clip stretches the golfer, so the ball stretches with it.
+      return slowFactor === 1 ? real : real.map((point) => ({ ...point, t: point.t * slowFactor }));
     },
-    [swing?.view, swing?.videoWidth, swing?.videoHeight, activeShot],
+    [swing?.view, swing?.videoWidth, swing?.videoHeight, activeShot, slowFactor],
   );
 
   const tracerPath = useMemo(() => projectFor(activeCal), [projectFor, activeCal]);
@@ -1933,6 +1942,23 @@ export function PlayerView({
                 </button>
               ))}
               <span className="faint">fps</span>
+            </div>
+            <div className="fps-row" role="group" aria-label="Clip slow motion">
+              <span>Slow-mo</span>
+              {SLOWMO_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={cx('chip tiny', slowFactor === option && 'is-on')}
+                  aria-pressed={slowFactor === option}
+                  onClick={() => {
+                    void patch({ slowMo: option }).catch(() => setPlayError('Could not save the slow-motion setting.'));
+                  }}
+                >
+                  {option === 1 ? 'Real' : `${option}×`}
+                </button>
+              ))}
+              <span className="faint">slower than life</span>
             </div>
             <div className="panel-actions">
               <button type="button" className={cx('btn', !muted && 'primary')} onClick={() => setMuted((value) => !value)}>
