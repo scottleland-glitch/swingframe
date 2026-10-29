@@ -73,6 +73,8 @@ export function formatScrub(seconds: number): string {
 }
 
 export function formatRate(speed: number): string {
+  if (speed === 4) return '4x';
+  if (speed === 2) return '2x';
   if (speed === 0.5) return '0.5x';
   if (speed === 0.25) return '0.25x';
   if (speed === 0.1) return '0.1x';
