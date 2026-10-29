@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { DRAW_COLORS, FPS_OPTIONS, SLOWMO_OPTIONS, SPEEDS } from '../constants';
-import { deleteSwing, getVideo, listSwings, releaseLocalVideo } from '../db';
+import { dbDiagnostics, deleteSwing, getVideo, listSwings, releaseLocalVideo } from '../db';
 import { backupSwing, downloadSwingVideo } from '../driveApi';
 import { DRIVE_ENABLED } from '../driveConfig';
 import { connectGoogle, googleConnected } from '../googleAuth';
@@ -100,9 +100,14 @@ function SlowLoadHint({ onRetry }: { onRetry: () => void }) {
   }, []);
   if (!slow) return null;
   return (
-    <button type="button" className="btn" onClick={onRetry}>
-      Try again
-    </button>
+    <>
+      <button type="button" className="btn" onClick={onRetry}>
+        Try again
+      </button>
+      <pre style={{ fontSize: 10, textAlign: 'left', whiteSpace: 'pre-wrap', opacity: 0.7, maxWidth: '90vw' }}>
+        {dbDiagnostics().slice(-14).join('\n')}
+      </pre>
+    </>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getSwing, getVideo, updateSwing } from './db';
+import { dbLog, getSwing, getVideo, updateSwing } from './db';
 import type { Drawing, SwingMeta } from './types';
 
 export type SwingLoad =
@@ -25,6 +25,7 @@ export function useSwing(id: string) {
 
   const reload = useCallback(async () => {
     const gen = ++generation.current;
+    dbLog(`open swing ${id.slice(0, 6)}`);
     if (dirty.current) {
       const snapshot = drawingsRef.current;
       try {
@@ -39,6 +40,7 @@ export function useSwing(id: string) {
     setSaveError(null);
     try {
       const [meta, video] = await Promise.all([getSwing(id), getVideo(id)]);
+      dbLog(`loaded: swing ${meta ? 'yes' : 'no'}, video ${video ? 'yes' : 'no'}`);
       if (generation.current !== gen) return;
       if (!meta) {
         setSwing(null);

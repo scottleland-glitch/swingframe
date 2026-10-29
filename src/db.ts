@@ -37,11 +37,30 @@ function withTimeout<T>(work: Promise<T>, ms: number, message: string, onTimeout
   });
 }
 
-function enqueue<T>(fn: () => Promise<T>): Promise<T> {
-  const guarded = () =>
-    withTimeout(fn(), OP_TIMEOUT_MS, 'Storage did not respond. Close Swingframe fully and open it again.', () => {
+const diag: string[] = [];
+const diagStart = Date.now();
+
+export function dbLog(line: string): void {
+  diag.push(`${((Date.now() - diagStart) / 1000).toFixed(1)}s ${line}`);
+  if (diag.length > 40) diag.shift();
+}
+
+export function dbDiagnostics(): string[] {
+  return diag.slice();
+}
+
+function enqueue<T>(fn: () => Promise<T>, label = 'op'): Promise<T> {
+  dbLog(`queued ${label}`);
+  const guarded = () => {
+    dbLog(`start ${label}`);
+    return withTimeout(fn().then((value) => {
+      dbLog(`done ${label}`);
+      return value;
+    }), OP_TIMEOUT_MS, 'Storage did not respond. Close Swingframe fully and open it again.', () => {
+      dbLog(`TIMEOUT ${label}`);
       dbPromise = null;
     });
+  };
   const run = chain.then(guarded, guarded);
   chain = run.then(
     () => undefined,
@@ -234,6 +253,7 @@ function ensureStoredBytes(): Promise<void> {
   // The upgrade used to read every saved video into memory on each launch. Once it has finished, never run it again.
   if (bytesFlagSet()) return Promise.resolve();
   if (!bytesReady) {
+    dbLog('upgrade check running');
     bytesReady = withTimeout(rewriteBlobValues(), 20000, 'Storage upgrade timed out.')
       .then(() => {
         try {
@@ -242,7 +262,8 @@ function ensureStoredBytes(): Promise<void> {
           /* The check just runs again next launch. */
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        dbLog(`upgrade check failed: ${err instanceof Error ? err.message : String(err)}`);
         bytesReady = null;
       });
   }
@@ -325,6 +346,7 @@ export function listSwings(): Promise<SwingMeta[]> {
     const tx = db.transaction('swings', 'readonly');
     const rows = await readStore<unknown[]>(tx.objectStore('swings'));
     await txDone(tx, 'Could not read swings.');
+    dbLog(`listSwings: ${rows.length} rows`);
     return rows
       .map(rehydrate)
       .filter((row): row is SwingMeta => row != null)
@@ -332,18 +354,20 @@ export function listSwings(): Promise<SwingMeta[]> {
         if (a.date !== b.date) return a.date < b.date ? 1 : -1;
         return b.createdAt - a.createdAt;
       });
-  });
+  }, 'listSwings');
 }
 
 export function getSwing(id: string): Promise<SwingMeta | null> {
   return enqueue(async () => {
     await ensureStoredBytes();
+    dbLog('getSwing: upgrade check done');
     const db = await openDB();
+    dbLog('getSwing: database open');
     const tx = db.transaction('swings', 'readonly');
     const row = await readStore<unknown>(tx.objectStore('swings'), id);
     await txDone(tx, 'Could not read that swing.');
     return rehydrate(row);
-  });
+  }, 'getSwing');
 }
 
 export function getVideo(id: string): Promise<Blob | null> {
@@ -352,9 +376,13 @@ export function getVideo(id: string): Promise<Blob | null> {
     const db = await openDB();
     const tx = db.transaction('videos', 'readonly');
     const row = await readStore<unknown>(tx.objectStore('videos'), id);
+    const size = (row as { bytes?: { byteLength?: number } } | null)?.bytes?.byteLength;
+    dbLog(`getVideo: row read, ${row instanceof Blob ? `blob ${row.size}` : size != null ? `${(size / 1048576).toFixed(1)} MB bytes` : 'no data'}`);
     await txDone(tx, 'Could not read that video.');
-    return asBlob(row, 'video/mp4');
-  });
+    const blob = asBlob(row, 'video/mp4');
+    dbLog(`getVideo: blob ${blob ? (blob.size / 1048576).toFixed(1) + ' MB' : 'none'}`);
+    return blob;
+  }, 'getVideo');
 }
 
 export function saveSwing(meta: SwingMeta, video: Blob): Promise<void> {
