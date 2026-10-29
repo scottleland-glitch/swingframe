@@ -48,6 +48,7 @@ export interface ExportRequest {
   videoWidth: number;
   videoHeight: number;
   marks: TracerMarks | null;
+  tracerColor?: string | null;
   signal?: AbortSignal;
   onProgress?: (fraction: number) => void;
 }
@@ -262,6 +263,7 @@ export async function recordTracerVideo(request: ExportRequest): Promise<ExportR
                 )
               : null,
             request.marks,
+            request.tracerColor ?? null,
           );
         }
         ctx.restore();

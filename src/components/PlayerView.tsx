@@ -1227,6 +1227,7 @@ export function PlayerView({
       videoHeight: swing.videoHeight || 0,
       marks: setupPhase === 'edit' ? null : showAimMarks(activeCal),
       tracerPath: activeCal.showTracer !== false ? exportPath : null,
+      tracerColor: activeCal.color ?? null,
       signal: controller.signal,
       onProgress: (fraction) => setExportProgress(fraction),
     })
@@ -1325,6 +1326,7 @@ export function PlayerView({
             activeCal.showTracer !== false && (tuningTracer || activeCal.impactTime != null) ? previewPath : null
           }
           tracerElapsed={tracerElapsed}
+          tracerColor={activeCal.color ?? null}
           tracerMarks={setupPhase == null ? showAimMarks(activeCal) : null}
           editMarkers={
             setupPhase === 'edit'

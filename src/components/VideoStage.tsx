@@ -120,6 +120,7 @@ export const VideoStage = forwardRef<
     tracerPath?: TracerPoint[] | null;
     tracerElapsed?: number | null;
     tracerMarks?: TracerMarks | null;
+    tracerColor?: string | null;
   }
 >(function VideoStage(props, ref) {
   const {
@@ -157,6 +158,7 @@ export const VideoStage = forwardRef<
     tracerPath = null,
     tracerElapsed = null,
     tracerMarks = null,
+    tracerColor = null,
   } = props;
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -1117,8 +1119,8 @@ export const VideoStage = forwardRef<
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     paint(ctx, live ?? drawings, draft, anglePts, cursor, color, layout.w, layout.h, selectedId);
-    paintTracer(ctx, tracerPath, layout.w, layout.h, tracerElapsed, tracerMarks);
-  }, [drawings, live, draft, anglePts, cursor, color, layout, selectedId, tracerPath, tracerElapsed, tracerMarks]);
+    paintTracer(ctx, tracerPath, layout.w, layout.h, tracerElapsed, tracerMarks, tracerColor);
+  }, [drawings, live, draft, anglePts, cursor, color, layout, selectedId, tracerPath, tracerElapsed, tracerMarks, tracerColor]);
 
   useImperativeHandle(
     ref,

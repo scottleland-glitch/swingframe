@@ -187,6 +187,7 @@ function sanitizeTracer(value: unknown): TracerCalibration | null {
     locked: rec.locked === true,
     showAim: rec.showAim === true,
     showTracer: rec.showTracer !== false,
+    color: typeof rec.color === 'string' && /^#[0-9a-f]{6}$/i.test(rec.color) ? rec.color.toLowerCase() : undefined,
     mode: rec.mode === 'manual' ? 'manual' : rec.mode === 'data' ? 'data' : undefined,
     shape: rec.shape === 'draw' || rec.shape === 'straight' || rec.shape === 'fade' ? rec.shape : null,
     manualStart: sanitizePoint(rec.manualStart),

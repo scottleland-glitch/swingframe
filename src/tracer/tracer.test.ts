@@ -975,3 +975,13 @@ describe('club path and face angle', () => {
     expect(b.curveYd).toBeLessThan(-5);
   });
 });
+
+describe('tracer color', () => {
+  it('falls back to white for anything that is not a preset', async () => {
+    const { tracerColorOf, TRACER_COLORS } = await import('./paintTracer');
+    expect(tracerColorOf(null)).toBe('#ffffff');
+    expect(tracerColorOf('#123456')).toBe('#ffffff');
+    expect(tracerColorOf('#ff3b30')).toBe('#ff3b30');
+    expect(TRACER_COLORS.length).toBeGreaterThanOrEqual(6);
+  });
+});

@@ -4,6 +4,7 @@ import type { ShotData, ShotField, TracerCalibration, ViewAngle } from '../types
 import { editShot, mergeScreen, simulateShot } from '../tracer/flight';
 import { readShotScreenshot } from '../tracer/ocr';
 import { withSide } from '../tracer/sign';
+import { TRACER_COLORS, tracerColorOf } from '../tracer/paintTracer';
 
 const FIELDS: { key: ShotField; label: string; unit: string; step: string; signed?: boolean }[] = [
   { key: 'ballSpeed', label: 'Ball speed', unit: 'mph', step: '0.1' },
@@ -281,6 +282,20 @@ export function TracerPanel({
         >
           {locked ? 'Unlock' : 'Lock'}
         </button>
+      </div>
+      <div className="tracer-colors" role="group" aria-label="Tracer color">
+        {TRACER_COLORS.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            className="tracer-color"
+            data-testid={`tracer-color-${c.label.toLowerCase()}`}
+            aria-label={c.label}
+            aria-pressed={tracerColorOf(tracer.color) === c.id}
+            style={{ background: c.id }}
+            onClick={() => onTracer({ ...tracer, color: c.id })}
+          />
+        ))}
       </div>
       <p className="panel-hint">
         {locked

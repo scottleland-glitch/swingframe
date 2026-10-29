@@ -55,6 +55,32 @@ function strokeSmooth(ctx: CanvasRenderingContext2D, points: { x: number; y: num
   ctx.stroke();
 }
 
+export const TRACER_COLORS: { id: string; label: string }[] = [
+  { id: '#ffffff', label: 'White' },
+  { id: '#ff3b30', label: 'Red' },
+  { id: '#ff9f0a', label: 'Orange' },
+  { id: '#ffd60a', label: 'Yellow' },
+  { id: '#30d158', label: 'Green' },
+  { id: '#5ac8fa', label: 'Cyan' },
+  { id: '#0a84ff', label: 'Blue' },
+  { id: '#ff4fa3', label: 'Pink' },
+];
+
+/** A saved color that is not a preset falls back to white. */
+export function tracerColorOf(color: string | null | undefined): string {
+  return TRACER_COLORS.some((c) => c.id === color) ? (color as string) : '#ffffff';
+}
+
+function rgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function tint(hex: string, alpha: number, toWhite = 0): string {
+  const [r, g, b] = rgb(hex).map((v) => Math.round(v + (255 - v) * toWhite));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 /** Glowing broadcast line. `elapsed` null draws the whole flight (calibration preview). */
 export function paintTracer(
   ctx: CanvasRenderingContext2D,
@@ -63,27 +89,30 @@ export function paintTracer(
   height: number,
   elapsed: number | null,
   marks: TracerMarks | null,
+  color: string | null = null,
 ) {
+  const hue = tracerColorOf(color);
+  const white = hue === '#ffffff';
   const points = path ? slicePath(path, elapsed) : [];
   if (points.length >= 2) {
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.shadowColor = 'rgba(140, 220, 255, 0.95)';
+    ctx.shadowColor = white ? 'rgba(140, 220, 255, 0.95)' : tint(hue, 0.95);
     ctx.shadowBlur = 16;
-    ctx.strokeStyle = 'rgba(190, 235, 255, 0.35)';
+    ctx.strokeStyle = white ? 'rgba(190, 235, 255, 0.35)' : tint(hue, 0.4);
     ctx.lineWidth = 12;
     strokeSmooth(ctx, points, width, height);
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+    ctx.strokeStyle = white ? 'rgba(255, 255, 255, 0.72)' : tint(hue, 0.85);
     ctx.lineWidth = 5;
     strokeSmooth(ctx, points, width, height);
-    ctx.strokeStyle = '#f7fbff';
+    ctx.strokeStyle = white ? '#f7fbff' : tint(hue, 1, 0.55);
     ctx.lineWidth = 2.2;
     strokeSmooth(ctx, points, width, height);
     const head = points[points.length - 1];
     ctx.beginPath();
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = white ? '#ffffff' : tint(hue, 1, 0.7);
     ctx.arc(head.x * width, head.y * height, 4.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();

@@ -1563,3 +1563,7 @@ textarea { resize: vertical; }
   background: rgba(190, 235, 60, 0.28);
   border-color: rgba(210, 245, 90, 0.7);
 }
+
+.tracer-colors { display: flex; gap: 10px; justify-content: space-between; padding: 12px 2px 4px; }
+.tracer-color { width: 30px; height: 30px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25); padding: 0; flex: none; }
+.tracer-color[aria-pressed='true'] { border-color: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,0.6), 0 0 0 4px #fff; }

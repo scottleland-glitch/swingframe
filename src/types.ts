@@ -82,6 +82,8 @@ export interface TracerCalibration {
   showAim?: boolean;
   /** Flight line. Missing or true shows it, so an older swing keeps its tracer. */
   showTracer?: boolean;
+  /** Tracer color as a preset hex from TRACER_COLORS. Missing means white. */
+  color?: string;
   /** Which tracer this swing uses. Missing means the launch-number tracer. */
   mode?: TracerMode;
   /** Draw, straight, or fade. Prefills the manual curve and breaks a tie when the taps are in a line. */
