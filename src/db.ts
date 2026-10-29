@@ -38,15 +38,57 @@ function withTimeout<T>(work: Promise<T>, ms: number, message: string, onTimeout
 }
 
 const diag: string[] = [];
-const diagStart = Date.now();
+
+const DIAG_KEY = 'swingframe-diag';
 
 export function dbLog(line: string): void {
-  diag.push(`${((Date.now() - diagStart) / 1000).toFixed(1)}s ${line}`);
+  const now = new Date();
+  const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+  diag.push(`${clock} ${line}`);
   if (diag.length > 40) diag.shift();
+  try {
+    // Saved right away, so the log survives if the phone kills the page.
+    window.localStorage.setItem(DIAG_KEY, JSON.stringify(diag));
+  } catch {
+    /* The log is only a help. */
+  }
 }
 
 export function dbDiagnostics(): string[] {
   return diag.slice();
+}
+
+/** The log kept from the last run, so it can be read after a crash. */
+export function savedDiagnostics(): string[] {
+  try {
+    const raw = window.localStorage.getItem(DIAG_KEY);
+    const rows = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(rows) ? rows.filter((row): row is string => typeof row === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Reads do not wait in line behind writes or other reads, so one stuck video cannot lock the library. */
+function readNow<T>(fn: () => Promise<T>, label: string, ms = OP_TIMEOUT_MS): Promise<T> {
+  dbLog(`read ${label}`);
+  return withTimeout(
+    fn().then(
+      (value) => {
+        dbLog(`done ${label}`);
+        return value;
+      },
+      (err: unknown) => {
+        dbLog(`FAILED ${label}: ${err instanceof Error ? err.message : String(err)}`);
+        throw err;
+      },
+    ),
+    ms,
+    'Storage did not respond. Close Swingframe fully and open it again.',
+    () => {
+      dbLog(`TIMEOUT ${label}`);
+    },
+  );
 }
 
 function enqueue<T>(fn: () => Promise<T>, label = 'op'): Promise<T> {
@@ -322,7 +364,7 @@ async function thumbnailBytes(
 }
 
 export function listSwings(): Promise<SwingMeta[]> {
-  return enqueue(async () => {
+  return readNow(async () => {
     await ensureStoredBytes();
     const db = await openDB();
     const tx = db.transaction('swings', 'readonly');
@@ -340,7 +382,7 @@ export function listSwings(): Promise<SwingMeta[]> {
 }
 
 export function getSwing(id: string): Promise<SwingMeta | null> {
-  return enqueue(async () => {
+  return readNow(async () => {
     await ensureStoredBytes();
     dbLog('getSwing: upgrade check done');
     const db = await openDB();
@@ -353,7 +395,7 @@ export function getSwing(id: string): Promise<SwingMeta | null> {
 }
 
 export function getVideo(id: string): Promise<Blob | null> {
-  return enqueue(async () => {
+  return readNow(async () => {
     await ensureStoredBytes();
     const db = await openDB();
     const tx = db.transaction('videos', 'readonly');
@@ -498,23 +540,12 @@ export function keepLocalVideo(id: string, video: Blob): Promise<void> {
 }
 
 /** Bytes still held for saved videos and thumbnails. */
-export function storedUsage(): Promise<number> {
-  return enqueue(async () => {
-    const db = await openDB();
-    const tx = db.transaction(['swings', 'videos'], 'readonly');
-    const videos = await readStore<unknown[]>(tx.objectStore('videos'));
-    const swings = await readStore<unknown[]>(tx.objectStore('swings'));
-    await txDone(tx, 'Could not read storage.');
-    let total = 0;
-    for (const row of videos) {
-      const stored = storedBytes(row);
-      if (stored) total += stored.bytes.byteLength;
-    }
-    for (const row of swings) {
-      if (!row || typeof row !== 'object') continue;
-      const thumb = storedBytes((row as { thumbnail?: unknown }).thumbnail);
-      if (thumb) total += thumb.bytes.byteLength;
-    }
-    return total;
-  });
+/** Space in use. The browser's own count, because adding up the videos meant reading every one into memory. */
+export async function storedUsage(): Promise<number> {
+  try {
+    const estimate = await navigator.storage?.estimate?.();
+    return estimate?.usage ?? 0;
+  } catch {
+    return 0;
+  }
 }
