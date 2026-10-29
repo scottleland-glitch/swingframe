@@ -10,17 +10,16 @@ const M_TO_YARDS = 1.0936133;
 const M_TO_FEET = 3.2808399;
 
 /**
- * Constant-coefficient drag plus Magnus lift, with a slow spin decay.
- * A 167 mph, 12° launch, 2600 rpm, straight shot carries a bit under 300 yards
- * and apexes a bit over 100 feet. A 150 mph, 12°, 2500 rpm driver carries in
- * the mid-250s. Ten degrees of spin axis curves that driver about 20 to 25
- * yards, a 7-iron about 10 to 14, and a wedge about 6 to 9. This is not
- * Foresight's ball model.
+ * Drag grows with spin and lift saturates, with a fairly quick spin decay. Fit to Trackman-style tour averages:
+ * a 167 mph, 11°, 2700 rpm driver carries about 275 yards, peaks near 105 feet and lands near 40°, with the
+ * apex about two thirds of the way down range. A 7-iron carries about 170 and a pitching wedge about 130 and
+ * lands steeper, so the wedge is closer to symmetric. Ten degrees of spin axis curves the driver about 22
+ * yards, a 7-iron about 14, and a wedge about 8. This is not Foresight's ball model.
  */
-const CD_BASE = 0.188;
-const CD_SPIN = 0.2;
-const CL_PER_S = 1.6;
-const CL_MAX = 0.25;
+const CD_BASE = 0.1974;
+const CD_SPIN = 0.4054;
+const CL_PER_S = 1.968;
+const CL_MAX = 0.3128;
 /**
  * Extra sideways lift while the lift coefficient is still climbing with spin.
  * Driver spin sits on that slope, and a pure split of the Magnus force then
@@ -28,10 +27,10 @@ const CL_MAX = 0.25;
  * 2 to 2.5 yards per degree at driver distance. Irons and wedges are already
  * at the lift cap, so the factor fades to 1 and their curve is unchanged.
  */
-const SIDE_EXTRA = 0.78;
+const SIDE_EXTRA = 0.34;
 const STEP = 0.005;
 /** Spin eases off over the flight so hang time stays in a real range. */
-const SPIN_TAU = 16;
+const SPIN_TAU = 6.4;
 
 /**
  * Calculated results only. Launch direction and spin axis are filled from club path and face angle

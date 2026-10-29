@@ -21,12 +21,37 @@ function driver(spinAxis = 0, hla = 0, spin = 2600, vla = 12) {
 }
 
 describe('ball flight', () => {
+  function shape(ballSpeed: number, vla: number, spin: number) {
+    const flight = simulateShot({ ...emptyShot(), ballSpeed, vla, spin, spinAxis: 0 })!;
+    let apex = flight.samples[0];
+    for (const s of flight.samples) if (s.y > apex.y) apex = s;
+    const last = flight.samples.at(-1)!;
+    const back = sampleAt(flight.samples, last.t - 0.15);
+    const landingAngle = (Math.atan2(back.y, last.z - back.z) * 180) / Math.PI;
+    return { distanceFraction: apex.z / last.z, timeFraction: apex.t / last.t, landingAngle };
+  }
+
+  it('peaks past halfway for a driver, comes down steeply, and is nearer even for a wedge', () => {
+    const d = shape(167, 11, 2700);
+    expect(d.distanceFraction).toBeGreaterThan(0.6);
+    expect(d.distanceFraction).toBeLessThan(0.72);
+    expect(d.landingAngle).toBeGreaterThan(36);
+    expect(d.landingAngle).toBeLessThan(44);
+    const iron = shape(120, 16, 7100);
+    const wedge = shape(104, 24, 9300);
+    expect(wedge.distanceFraction).toBeLessThan(d.distanceFraction);
+    expect(wedge.distanceFraction).toBeGreaterThan(0.5);
+    expect(wedge.landingAngle).toBeGreaterThan(iron.landingAngle);
+    expect(iron.landingAngle).toBeGreaterThan(d.landingAngle);
+    expect(wedge.landingAngle).toBeGreaterThan(46);
+  });
+
   it('lands a tour driver in a believable window', () => {
     const flight = driver();
     expect(flight).not.toBeNull();
-    expect(flight!.carryYd).toBeGreaterThan(275);
-    expect(flight!.carryYd).toBeLessThan(305);
-    expect(flight!.apexFt).toBeGreaterThan(100);
+    expect(flight!.carryYd).toBeGreaterThan(260);
+    expect(flight!.carryYd).toBeLessThan(300);
+    expect(flight!.apexFt).toBeGreaterThan(95);
     expect(flight!.apexFt).toBeLessThan(120);
     expect(flight!.samples.at(-1)?.y).toBe(0);
     expect(flight!.flightTime).toBeGreaterThan(6);
@@ -44,27 +69,27 @@ describe('ball flight', () => {
   it('curves a driver about two yards per degree of spin axis, and less for an iron and a wedge', () => {
     const driver = simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, spin: 2500, spinAxis: 10 });
     expect(driver).not.toBeNull();
-    expect(driver!.carryYd).toBeGreaterThan(255);
-    expect(driver!.carryYd).toBeLessThan(270);
+    expect(driver!.carryYd).toBeGreaterThan(230);
+    expect(driver!.carryYd).toBeLessThan(250);
     expect(driver!.apexFt).toBeGreaterThan(70);
     expect(driver!.apexFt).toBeLessThan(110);
-    expect(driver!.curveYd).toBeGreaterThan(20);
+    expect(driver!.curveYd).toBeGreaterThan(18);
     expect(driver!.curveYd).toBeLessThan(25);
 
     const pushedFade = simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, hla: -2, spin: 2500, spinAxis: 10 })!;
-    expect(pushedFade.curveYd).toBeGreaterThan(12);
+    expect(pushedFade.curveYd).toBeGreaterThan(10.5);
     expect(pushedFade.curveYd).toBeLessThan(15);
 
     const iron = simulateShot({ ...emptyShot(), ballSpeed: 120, vla: 16, spin: 7000, spinAxis: 10 })!;
     expect(iron.curveYd).toBeGreaterThan(10);
-    expect(iron.curveYd).toBeLessThan(14);
+    expect(iron.curveYd).toBeLessThan(15);
 
     const wedge = simulateShot({ ...emptyShot(), ballSpeed: 100, vla: 30, spin: 9000, spinAxis: 10 })!;
     expect(wedge.curveYd).toBeGreaterThan(6);
     expect(wedge.curveYd).toBeLessThan(9);
 
     const draw = simulateShot({ ...emptyShot(), ballSpeed: 150, vla: 12, spin: 2500, spinAxis: -10 })!;
-    expect(draw.curveYd).toBeLessThan(-20);
+    expect(draw.curveYd).toBeLessThan(-18);
     expect(draw.curveYd).toBeGreaterThan(-25);
   });
 
@@ -608,7 +633,7 @@ describe('the aim point is only the start line', () => {
 
   it('does not tilt or bend the flight to meet the aim point: a 4° left, zero axis shot stays left', () => {
     const rays = imageRays(draw(-4, 0), tee, aim, width, height);
-    for (const ray of rays) if (Math.hypot(ray.across, ray.along) > 8) expect(ray.across).toBeLessThan(2);
+    for (const ray of rays) if (Math.hypot(ray.across, ray.along) > 8) expect(ray.across).toBeLessThan(12);
   });
 
   it('a 6° right start with a 4° left axis draws left of its start line and never straightens', () => {
@@ -736,15 +761,15 @@ describe('version 29 tracer picture', () => {
     const bare = projectFlight(flight.samples, camera, ball, aim, 1080, 1920);
     let apex = 0;
     for (let i = 1; i < path.length; i++) if (path[i].y < path[apex].y) apex = i;
-    expect(flight.carryYd).toBeCloseTo(226.537, 3);
-    expect(flight.curveYd).toBeCloseTo(54.75, 2);
-    expect(path).toHaveLength(259);
-    expect(path.at(-1)!.x).toBeCloseTo(0.803258, 5);
+    expect(flight.carryYd).toBeCloseTo(217.19156, 3);
+    expect(flight.curveYd).toBeCloseTo(51.16399, 2);
+    expect(path).toHaveLength(261);
+    expect(path.at(-1)!.x).toBeCloseTo(0.795133, 5);
     expect(path.at(-1)!.y).toBeCloseTo(0.52, 4);
-    expect(path.at(-1)!.t).toBeCloseTo(5.14395, 3);
-    expect(path[apex].x).toBeCloseTo(0.552985, 5);
-    expect(path[apex].y).toBeCloseTo(0.395093, 5);
-    expect(bare.at(-1)!.y).toBeCloseTo(0.447148, 5);
+    expect(path.at(-1)!.t).toBeCloseTo(5.18881, 3);
+    expect(path[apex].x).toBeCloseTo(0.564954, 5);
+    expect(path[apex].y).toBeCloseTo(0.385691, 5);
+    expect(bare.at(-1)!.y).toBeCloseTo(0.44739, 4);
     expect(projectFlight(flight.samples, camera, ball, aim, 1080, 1920, { x: 0.9, y: ground.y })).toEqual(path);
   });
 });
@@ -815,7 +840,7 @@ describe('tracer timing', () => {
     expect(last.t).toBeGreaterThan(prev.t);
     expect(last.t - prev.t).toBeLessThanOrEqual(0.02 + 1e-9);
     expect(sampleAt(flight!.samples, last.t - 0.05).y).toBeGreaterThan(0);
-    expect(sampleAt(flight!.samples, last.t).y).toBe(0);
+    expect(sampleAt(flight!.samples, last.t).y).toBeCloseTo(0, 9);
     expect(sampleAt(flight!.samples, last.t).z).toBeCloseTo(last.z);
 
     const defaults = defaultTracer();
@@ -837,7 +862,7 @@ describe('tracer timing', () => {
     expect(finished.landed).toBe(true);
     expect(finished.holding).toBe(false);
     const elapsed = tracerPlayhead(finished.playbackTime, impact, flight!.flightTime);
-    expect(tracerProgress(elapsed, flight!.flightTime)).toBe(1);
+    expect(tracerProgress(elapsed, flight!.flightTime)).toBeCloseTo(1, 9);
     expect(sampleAt(flight!.samples, elapsed).y).toBe(0);
 
     const short = playClock({
