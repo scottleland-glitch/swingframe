@@ -33,8 +33,25 @@ const STEP = 0.005;
 /** Spin eases off over the flight so hang time stays in a real range. */
 const SPIN_TAU = 16;
 
-/** Calculated results only. Launch direction and spin axis are never invented from club numbers. */
-const MODEL_FIELDS: ShotField[] = ['carry', 'apex', 'curve'];
+/**
+ * Calculated results only. Launch direction and spin axis are filled from club path and face angle
+ * (a center strike), and only while the golfer has not typed or read them.
+ */
+const MODEL_FIELDS: ShotField[] = ['carry', 'apex', 'curve', 'hla', 'spinAxis'];
+
+/**
+ * D-plane for a center strike, so there is no gear effect. Path and face are degrees from the aim line,
+ * negative left and positive right. The ball starts mostly where the face points, a little along the path,
+ * and the spin axis tilts by the face-to-path difference over the dynamic loft.
+ */
+export function dPlane(path: number, face: number, vla: number): { hla: number; spinAxis: number } {
+  const faceWeight = Math.min(0.85, Math.max(0.72, 0.85 - 0.0058 * Math.max(0, vla - 12)));
+  const hla = faceWeight * face + (1 - faceWeight) * path;
+  const loft = Math.max(4, vla / 0.78) * (Math.PI / 180);
+  const faceToPath = ((face - path) * Math.PI) / 180;
+  const spinAxis = (Math.atan(Math.sin(faceToPath) / Math.tan(loft)) * 180) / Math.PI;
+  return { hla: roundTo(hla, 1), spinAxis: roundTo(spinAxis, 1) };
+}
 
 export interface FlightSample {
   t: number;
@@ -240,6 +257,17 @@ function clearModel(shot: ShotData, keep: ShotField | null) {
  */
 export function completeShot(input: ShotData): ShotData {
   const shot: ShotData = { ...input, sources: { ...input.sources } };
+  if (shot.clubPath != null && shot.faceToTarget != null && shot.vla != null) {
+    const plane = dPlane(shot.clubPath, shot.faceToTarget, shot.vla);
+    if (shot.hla == null) {
+      shot.hla = plane.hla;
+      shot.sources.hla = 'model';
+    }
+    if (shot.spinAxis == null) {
+      shot.spinAxis = plane.spinAxis;
+      shot.sources.spinAxis = 'model';
+    }
+  }
   const flight = simulateShot(shot);
   if (!flight) return shot;
   if (shot.carry == null) {

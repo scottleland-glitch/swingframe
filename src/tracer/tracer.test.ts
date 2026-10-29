@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { chooseUndo, tracerIsSet } from './active';
-import { completeShot, editShot, emptyShot, mergeScreen, sampleAt, simulateShot } from './flight';
+import { completeShot, dPlane, editShot, emptyShot, mergeScreen, sampleAt, simulateShot } from './flight';
 import { detectImpact } from './impact';
 import { tesseractPaths } from './ocrPaths';
 import { parseForesightText } from './parseShot';
@@ -915,5 +915,38 @@ describe('tesseract paths', () => {
     expect(paths.langPath).toBe('/swingframe/tesseract/lang');
     expect(JSON.stringify(paths)).not.toContain('jsdelivr');
     expect(JSON.stringify(paths)).not.toContain('http');
+  });
+});
+
+describe('club path and face angle', () => {
+  const base = { ...emptyShot(), ballSpeed: 147, vla: 12, spin: 2600 };
+  it('starts a driver mostly on the face and curves it by the face to path gap', () => {
+    const plane = dPlane(-4, 0, 12);
+    expect(plane.hla).toBeCloseTo(-0.6, 1);
+    expect(plane.spinAxis).toBeGreaterThan(12);
+    expect(plane.spinAxis).toBeLessThan(22);
+    const draw = dPlane(4, 0, 12);
+    expect(draw.hla).toBeCloseTo(0.6, 1);
+    expect(draw.spinAxis).toBeCloseTo(-plane.spinAxis, 1);
+    expect(dPlane(3, 3, 12).spinAxis).toBeCloseTo(0, 1);
+    expect(dPlane(3, 3, 12).hla).toBeCloseTo(3, 1);
+  });
+  it('fills launch direction and spin axis from path and face, and leaves typed values alone', () => {
+    const shot = completeShot({ ...base, clubPath: -3, faceToTarget: 2 });
+    expect(shot.sources.hla).toBe('model');
+    expect(shot.sources.spinAxis).toBe('model');
+    expect(shot.spinAxis!).toBeGreaterThan(10);
+    expect(shot.hla!).toBeGreaterThan(0.5);
+    const typed = completeShot({ ...base, clubPath: -3, faceToTarget: 2, hla: -4, sources: { hla: 'typed' } });
+    expect(typed.hla).toBe(-4);
+    expect(typed.spinAxis!).toBeGreaterThan(10);
+    const edited = editShot(shot, 'clubPath', 3);
+    expect(edited.spinAxis!).toBeLessThan(0);
+  });
+  it('a path-left, face-right shot draws no more than a path-and-face-equal shot', () => {
+    const a = simulateShot(completeShot({ ...base, clubPath: 0, faceToTarget: 0 }))!;
+    const b = simulateShot(completeShot({ ...base, clubPath: 4, faceToTarget: 0 }))!;
+    expect(Math.abs(a.curveYd)).toBeLessThan(1);
+    expect(b.curveYd).toBeLessThan(-5);
   });
 });

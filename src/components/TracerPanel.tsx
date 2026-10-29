@@ -11,6 +11,8 @@ const FIELDS: { key: ShotField; label: string; unit: string; step: string; signe
   { key: 'spin', label: 'Total spin', unit: 'rpm', step: '1' },
   { key: 'spinAxis', label: 'Spin axis', unit: '°', step: '0.1', signed: true },
   { key: 'hla', label: 'Launch Direction (HLA)', unit: '°', step: '0.1', signed: true },
+  { key: 'clubPath', label: 'Club path', unit: '°', step: '0.1', signed: true },
+  { key: 'faceToTarget', label: 'Face angle', unit: '°', step: '0.1', signed: true },
 ];
 
 const SOURCE_LABEL = { screen: 'screenshot', typed: 'typed', model: 'calculated' } as const;
@@ -240,7 +242,7 @@ export function TracerPanel({
         </p>
       )}
       <p className="panel-hint">
-        L and R are degrees left or right of the aim line. Launch Direction (HLA) is the start line. Spin axis curves the ball off that line, and the aim point is not the landing.
+        L and R are degrees left or right of the aim line. Launch Direction (HLA) is the start line. Enter club path and face angle (center strike) and the start line and spin axis are worked out for you, unless you type them. Spin axis curves the ball off that line, and the aim point is not the landing.
       </p>
       </fieldset>
       )}
