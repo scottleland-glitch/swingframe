@@ -206,17 +206,45 @@ function readAllKeyed(store: IDBObjectStore): Promise<{ key: IDBValidKey; value:
   });
 }
 
+function readAllKeys(store: IDBObjectStore): Promise<IDBValidKey[]> {
+  return new Promise((resolve, reject) => {
+    const req = store.getAllKeys();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error ?? new Error('Could not read saved swings.'));
+  });
+}
+
 /**
  * Older builds stored Blob values. iOS drops those records when the Home
  * Screen app closes, so rewrite any that are still readable into bytes.
  */
 let bytesReady: Promise<void> | null = null;
 
+const BYTES_FLAG = 'swingframe-bytes-v1';
+
+function bytesFlagSet(): boolean {
+  try {
+    return window.localStorage.getItem(BYTES_FLAG) === '1';
+  } catch {
+    return false;
+  }
+}
+
 function ensureStoredBytes(): Promise<void> {
+  // The upgrade used to read every saved video into memory on each launch. Once it has finished, never run it again.
+  if (bytesFlagSet()) return Promise.resolve();
   if (!bytesReady) {
-    bytesReady = withTimeout(rewriteBlobValues(), 20000, 'Storage upgrade timed out.').catch(() => {
-      bytesReady = null;
-    });
+    bytesReady = withTimeout(rewriteBlobValues(), 20000, 'Storage upgrade timed out.')
+      .then(() => {
+        try {
+          window.localStorage.setItem(BYTES_FLAG, '1');
+        } catch {
+          /* The check just runs again next launch. */
+        }
+      })
+      .catch(() => {
+        bytesReady = null;
+      });
   }
   return bytesReady;
 }
@@ -225,7 +253,7 @@ async function rewriteBlobValues(): Promise<void> {
   const db = await openDB();
   const readTx = db.transaction(['swings', 'videos'], 'readonly');
   const swings = await readAllKeyed(readTx.objectStore('swings'));
-  const videos = await readAllKeyed(readTx.objectStore('videos'));
+  const videoKeys = await readAllKeys(readTx.objectStore('videos'));
   await txDone(readTx, 'Could not read swings.');
 
   const swingPuts: StoredSwing[] = [];
@@ -246,11 +274,15 @@ async function rewriteBlobValues(): Promise<void> {
   }
 
   const videoPuts: { key: IDBValidKey; value: StoredBytes }[] = [];
-  for (const row of videos) {
-    if (!(row.value instanceof Blob) || row.value.size === 0) continue;
-    const stored = await toStoredBytes(row.value, row.value.type || 'video/mp4');
+  for (const key of videoKeys) {
+    // One video at a time, so a long list never sits in memory together.
+    const one = db.transaction('videos', 'readonly');
+    const value = await readStore<unknown>(one.objectStore('videos'), key);
+    await txDone(one, 'Could not read swings.');
+    if (!(value instanceof Blob) || value.size === 0) continue;
+    const stored = await toStoredBytes(value, value.type || 'video/mp4');
     if (stored.bytes.byteLength === 0) continue;
-    videoPuts.push({ key: row.key, value: stored });
+    videoPuts.push({ key, value: stored });
   }
 
   if (swingPuts.length === 0 && videoPuts.length === 0) return;

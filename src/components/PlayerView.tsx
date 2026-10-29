@@ -92,6 +92,20 @@ function useClock(engine: RefObject<VideoEngine | null>) {
   return clock;
 }
 
+function SlowLoadHint({ onRetry }: { onRetry: () => void }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSlow(true), 6000);
+    return () => window.clearTimeout(timer);
+  }, []);
+  if (!slow) return null;
+  return (
+    <button type="button" className="btn" onClick={onRetry}>
+      Try again
+    </button>
+  );
+}
+
 export function PlayerView({
   id,
   onBack,
@@ -1170,6 +1184,7 @@ export function PlayerView({
         </header>
         <div className="empty">
           <p>{message}</p>
+          {load.status === 'loading' ? <SlowLoadHint onRetry={() => void reload()} /> : null}
           <button type="button" className="btn" onClick={onBack}>
             Back to library
           </button>
