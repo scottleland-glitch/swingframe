@@ -92,6 +92,12 @@ function useClock(engine: RefObject<VideoEngine | null>) {
   return clock;
 }
 
+/** Tracer speed as the user thinks of it: a flight stretched 4x runs at 0.25x. */
+function tracerSpeedLabel(factor: number): string {
+  const speed = 1 / (factor > 0 ? factor : 1);
+  return `${Number(speed.toFixed(2))}x`;
+}
+
 function SlowLoadHint({ onRetry }: { onRetry: () => void }) {
   const [slow, setSlow] = useState(false);
   useEffect(() => {
@@ -1572,6 +1578,21 @@ export function PlayerView({
           <button type="button" className="speed-pill" data-testid="speed-pill" aria-label="Playback speed" onClick={cycleRate}>
             {formatRate(rate)}
           </button>
+          {activeCal.impactTime != null && activeCal.showTracer !== false && (
+            <button
+              type="button"
+              className="speed-pill"
+              data-testid="tracer-speed"
+              aria-label="Tracer speed"
+              onClick={() => {
+                const index = SLOWMO_OPTIONS.findIndex((option) => option === slowFactor);
+                const next = SLOWMO_OPTIONS[(index + 1) % SLOWMO_OPTIONS.length] ?? 1;
+                void patch({ slowMo: next }).catch(() => setPlayError('Could not save the tracer speed.'));
+              }}
+            >
+              Ball {tracerSpeedLabel(slowFactor)}
+            </button>
+          )}
           <button
             type="button"
             className="speed-pill"

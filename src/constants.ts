@@ -10,7 +10,7 @@ export const DRAW_COLORS = [
 export const SPEEDS = [1, 2, 4, 0.5, 0.25, 0.1] as const;
 
 /** How much slower than real time the clip plays. The tracer flies on real time, scaled by this. */
-export const SLOWMO_OPTIONS = [1, 2, 4, 8] as const;
+export const SLOWMO_OPTIONS = [1, 2, 3, 4, 6, 8, 12, 16] as const;
 export const FPS_OPTIONS = [30, 60, 120, 240] as const;
 
 export const DEFAULT_FPS = 60;
