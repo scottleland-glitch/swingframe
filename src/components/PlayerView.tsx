@@ -157,6 +157,7 @@ export function PlayerView({
   const [feetTick, setFeetTick] = useState(0);
   const [numbersOpen, setNumbersOpen] = useState(false);
   const [numbersFlag, setNumbersFlag] = useState(false);
+  const [keepDrive, setKeepDrive] = useState<string | null>(null);
   const [shapesOpen, setShapesOpen] = useState(false);
   const [aimGuides, setAimGuides] = useState<{ toe: [Pt, Pt]; parallel: [Pt, Pt] } | null>(null);
   const [shot, setShot] = useState<ShotData | null>(null);
@@ -1548,6 +1549,11 @@ export function PlayerView({
           <span>Added to History</span>
         </div>
       )}
+      {keepDrive && (
+        <p className="player-banner keep-drive-note" role="status" data-testid="keep-drive-note">
+          {keepDrive}
+        </p>
+      )}
       {swing?.draft && load.status === 'ready' && (
         <div className="keep-bar" data-testid="keep-bar">
           <button type="button" className="keep-pill" data-testid="discard-swing" onClick={() => setConfirmDelete(true)}>
@@ -1562,6 +1568,20 @@ export function PlayerView({
                 .then(() => {
                   setSavedNote(true);
                   onChanged();
+                  // Only a kept swing goes to Drive, and only when Drive is already connected (no sign-in prompt here).
+                  if (DRIVE_ENABLED && blob && googleConnected()) {
+                    setKeepDrive('Backing up to Drive…');
+                    void backupSwing({ ...swing, draft: false, drawings }, blob, (label) => setKeepDrive(label))
+                      .then(() => {
+                        setKeepDrive('Saved to Drive');
+                        onChanged();
+                        window.setTimeout(() => setKeepDrive(null), 3500);
+                      })
+                      .catch(() => {
+                        setKeepDrive("Drive backup didn't finish. Use Back up to Drive in the menu.");
+                        window.setTimeout(() => setKeepDrive(null), 6000);
+                      });
+                  }
                 })
                 .catch((err: unknown) => {
                   setPlayError(err instanceof Error ? err.message : 'Could not keep the swing.');
