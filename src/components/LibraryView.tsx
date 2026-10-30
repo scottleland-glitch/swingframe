@@ -491,93 +491,184 @@ function Carousel({
   onIndex: (index: number) => void;
   onPick: (id: Group) => void;
 }) {
-  const track = useRef<HTMLDivElement>(null);
-  const settle = useRef(0);
+  const box = useRef<HTMLDivElement>(null);
+  const cards = useRef<(HTMLButtonElement | null)[]>([]);
   const n = tiles.length;
-  // Three copies in a row. After a swipe stops, the view jumps by one whole copy so it never runs out.
-  const copies = [0, 1, 2];
+  // Position in tile units. 0 is the first tile centered; it wraps around forever.
+  const pos = useRef(Math.min(Math.max(lastTile, 0), n - 1));
+  const vel = useRef(0); // tiles per second
+  const raf = useRef(0);
+  const drag = useRef<{ id: number; x: number; t: number; moved: boolean; samples: { x: number; t: number }[] } | null>(null);
+  const clickBlock = useRef(false);
+  const shown = useRef(-1);
 
-  function geometry(el: HTMLDivElement) {
-    const first = el.children[0] as HTMLElement | undefined;
-    const second = el.children[1] as HTMLElement | undefined;
-    if (!first || !second) return null;
-    const step = second.offsetLeft - first.offsetLeft;
-    const base = first.offsetLeft + first.offsetWidth / 2 - el.clientWidth / 2;
-    return step > 0 ? { step, base } : null;
+  function paint() {
+    const el = box.current;
+    if (!el) return;
+    const step = el.clientWidth * 0.78 + 14;
+    for (let i = 0; i < n; i += 1) {
+      const card = cards.current[i];
+      if (!card) continue;
+      const d = ((((i - pos.current + n / 2) % n) + n) % n) - n / 2;
+      const a = Math.min(Math.abs(d), 1.5);
+      card.style.transform = `translate(${d * step}px, -50%) scale(${1 - 0.09 * a})`;
+      card.style.opacity = String(1 - 0.3 * Math.min(a, 1));
+      card.style.zIndex = String(10 - Math.round(Math.abs(d) * 2));
+      card.style.visibility = Math.abs(d) > 1.9 ? 'hidden' : 'visible';
+    }
+    const now = ((Math.round(pos.current) % n) + n) % n;
+    lastTile = now;
+    if (now !== shown.current) {
+      shown.current = now;
+      onIndex(now);
+    }
+  }
+
+  function stop() {
+    window.cancelAnimationFrame(raf.current);
+    raf.current = 0;
+  }
+
+  function glide() {
+    stop();
+    let last = performance.now();
+    const frame = (time: number) => {
+      const dt = Math.min((time - last) / 1000, 0.05);
+      last = time;
+      if (Math.abs(vel.current) > 0.45) {
+        // Free floating: keeps turning and slows down gradually.
+        pos.current += vel.current * dt;
+        vel.current *= Math.exp(-dt * 1.1);
+      } else {
+        // Nearly stopped: drift gently to the closest tile.
+        vel.current = 0;
+        const target = Math.round(pos.current);
+        const gap = target - pos.current;
+        pos.current += gap * (1 - Math.exp(-dt * 5));
+        if (Math.abs(gap) < 0.0015) {
+          pos.current = target;
+          paint();
+          raf.current = 0;
+          return;
+        }
+      }
+      paint();
+      raf.current = window.requestAnimationFrame(frame);
+    };
+    raf.current = window.requestAnimationFrame(frame);
   }
 
   useLayoutEffect(() => {
-    const el = track.current;
-    if (!el) return;
-    const g = geometry(el);
-    if (!g) return;
-    const start = Math.min(Math.max(lastTile, 0), n - 1);
-    el.style.scrollSnapType = 'none';
-    el.scrollLeft = g.base + (n + start) * g.step;
-    onIndex(start);
-    requestAnimationFrame(() => {
-      el.style.scrollSnapType = '';
-    });
-    // Runs once when the carousel appears.
+    paint();
+    const el = box.current;
+    const redraw = () => paint();
+    window.addEventListener('resize', redraw);
+    void el;
+    return () => {
+      window.removeEventListener('resize', redraw);
+      stop();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => () => window.clearTimeout(settle.current), []);
+  function stepPx() {
+    return (box.current?.clientWidth ?? 390) * 0.78 + 14;
+  }
 
-  function onScroll(el: HTMLDivElement) {
-    const g = geometry(el);
-    if (!g) return;
-    const raw = Math.round((el.scrollLeft - g.base) / g.step);
-    const shown = ((raw % n) + n) % n;
-    lastTile = shown;
-    if (shown !== index) onIndex(shown);
-    window.clearTimeout(settle.current);
-    settle.current = window.setTimeout(() => {
-      const now = Math.round((el.scrollLeft - g.base) / g.step);
-      const shift = now < n ? n : now >= 2 * n ? -n : 0;
-      if (shift === 0) return;
-      el.style.scrollSnapType = 'none';
-      el.scrollLeft += shift * g.step;
-      requestAnimationFrame(() => {
-        el.style.scrollSnapType = '';
-      });
-    }, 140);
+  function onDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    stop();
+    vel.current = 0;
+    drag.current = {
+      id: event.pointerId,
+      x: event.clientX,
+      t: event.timeStamp,
+      moved: false,
+      samples: [{ x: event.clientX, t: event.timeStamp }],
+    };
+  }
+
+  function onMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const d = drag.current;
+    if (!d || d.id !== event.pointerId) return;
+    const dx = event.clientX - d.x;
+    if (!d.moved && Math.abs(dx) > 8) {
+      d.moved = true;
+      clickBlock.current = true;
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // pointer already gone
+      }
+    }
+    if (!d.moved) return;
+    pos.current -= (event.clientX - d.samples[d.samples.length - 1].x) / stepPx();
+    d.samples.push({ x: event.clientX, t: event.timeStamp });
+    while (d.samples.length > 2 && event.timeStamp - d.samples[0].t > 90) d.samples.shift();
+    paint();
+  }
+
+  function onUp(event: ReactPointerEvent<HTMLDivElement>) {
+    const d = drag.current;
+    if (!d || d.id !== event.pointerId) return;
+    drag.current = null;
+    if (!d.moved) return;
+    const first = d.samples[0];
+    const lastSample = d.samples[d.samples.length - 1];
+    const span = Math.max(lastSample.t - first.t, 1);
+    const fresh = event.timeStamp - lastSample.t < 80;
+    const v = fresh ? (-(lastSample.x - first.x) / span / stepPx()) * 1000 : 0;
+    vel.current = Math.max(-14, Math.min(14, v));
+    window.setTimeout(() => {
+      clickBlock.current = false;
+    }, 60);
+    glide();
   }
 
   return (
     <div className="carousel-wrap">
-      <div className="carousel" ref={track} data-testid="carousel" onScroll={(event) => onScroll(event.currentTarget)}>
-        {copies.flatMap((copy) =>
-          tiles.map((tile) => (
-            <button
-              key={`${copy}-${tile.id}`}
-              type="button"
-              className="tile"
-              data-testid={copy === 1 ? `tile-${tile.id}` : undefined}
-              aria-hidden={copy === 1 ? undefined : true}
-              tabIndex={copy === 1 ? 0 : -1}
-              onClick={() => onPick(tile.id)}
-            >
-              <span className="tile-head">
-                <span className="tile-title">{tile.title}</span>
-                <span className="tile-line">{tile.line}</span>
+      <div
+        className="carousel"
+        ref={box}
+        data-testid="carousel"
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+      >
+        {tiles.map((tile, i) => (
+          <button
+            key={tile.id}
+            ref={(node) => {
+              cards.current[i] = node;
+            }}
+            type="button"
+            className="tile"
+            data-testid={`tile-${tile.id}`}
+            onClick={() => {
+              if (clickBlock.current) return;
+              onPick(tile.id);
+            }}
+          >
+            <span className="tile-head">
+              <span className="tile-title">{tile.title}</span>
+              <span className="tile-line">{tile.line}</span>
+            </span>
+            <span className="tile-photo">
+              <TileCover blobs={tile.covers} />
+            </span>
+            <span className="tile-foot">
+              <span className="tile-count">
+                {loaded ? `${tile.count} ${tile.count === 1 ? 'swing' : 'swings'}` : ' '}
               </span>
-              <span className="tile-photo">
-                <TileCover blobs={tile.covers} />
-              </span>
-              <span className="tile-foot">
-                <span className="tile-count">
-                  {loaded ? `${tile.count} ${tile.count === 1 ? 'swing' : 'swings'}` : ' '}
+              {loaded && tile.count > 0 && (
+                <span className="tile-views">
+                  DTL {tile.dtl} · FO {tile.face}
                 </span>
-                {loaded && tile.count > 0 && (
-                  <span className="tile-views">
-                    DTL {tile.dtl} · FO {tile.face}
-                  </span>
-                )}
-              </span>
-            </button>
-          )),
-        )}
+              )}
+            </span>
+          </button>
+        ))}
       </div>
       <div className="carousel-dots" aria-hidden="true">
         {tiles.map((tile, i) => (
