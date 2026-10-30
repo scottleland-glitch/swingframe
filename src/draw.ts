@@ -107,7 +107,7 @@ function lineLabelLayout(
 ): { label: string; cx: number; cy: number; tw: number } | null {
   const lean = lineLean(d.a, d.b, w, h);
   if (!lean) return null;
-  const label = `${lean.deg.toFixed(1)}° vert`;
+  const label = `${lean.deg.toFixed(1)}°`;
   let m = ctx;
   if (!m) {
     measureCtx ??= document.createElement('canvas').getContext('2d');
