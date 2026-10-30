@@ -3,13 +3,15 @@ import { clubGroup } from './clubs';
 import { viewLabel } from './format';
 
 describe('club groups', () => {
-  it('keeps woods, hybrids, and the putter out of the three groups', () => {
-    for (const club of ['3W', '5W', '3 wood', 'Hybrid', '4h', '4 hybrid', 'Putter', 'putter', '']) {
+  it('keeps woods, hybrids, and unset clubs out of the four groups', () => {
+    for (const club of ['3W', '5W', '3 wood', 'Hybrid', '4h', '4 hybrid', '']) {
       expect(clubGroup(club)).toBe('other');
     }
   });
 
-  it('maps drivers, irons, and wedges', () => {
+  it('maps drivers, irons, wedges, and putters', () => {
+    expect(clubGroup('Putter')).toBe('putter');
+    expect(clubGroup('putter')).toBe('putter');
     expect(clubGroup('Driver')).toBe('driver');
     expect(clubGroup('driver')).toBe('driver');
     expect(clubGroup('DR')).toBe('driver');

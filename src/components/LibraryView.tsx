@@ -17,7 +17,21 @@ const CLUB_FILTERS: { id: ClubFilter; label: string; name: string }[] = [
   { id: 'driver', label: 'Driver', name: 'Driver' },
   { id: 'iron', label: 'Iron', name: 'Iron' },
   { id: 'wedge', label: 'Wedge', name: 'Wedge' },
+  { id: 'putter', label: 'Putt', name: 'Putter' },
 ];
+
+type Group = Exclude<ClubFilter, 'all'>;
+type Section = Group | 'all' | null;
+
+const TILES: { id: Group; title: string; line: string }[] = [
+  { id: 'driver', title: 'Driver', line: 'Off the tee' },
+  { id: 'iron', title: 'Irons', line: 'Mid and short irons' },
+  { id: 'wedge', title: 'Wedges', line: 'Scoring clubs' },
+  { id: 'putter', title: 'Putting', line: 'On the green' },
+];
+
+/** Remembers where History was left, so coming back from a swing lands in the same group. */
+let lastSection: Section = null;
 
 const VIEW_FILTERS: { id: ViewFilter; label: string; name: string }[] = [
   { id: 'all', label: 'All', name: 'All views' },
@@ -35,7 +49,11 @@ export function LibraryView({
   onHome: () => void;
 }) {
   const [swings, setSwings] = useState<SwingMeta[]>([]);
-  const [clubFilter, setClubFilter] = useState<ClubFilter>('all');
+  const [section, setSectionState] = useState<Section>(lastSection);
+  const [allClub, setAllClub] = useState<ClubFilter>('all');
+  const [tileIndex, setTileIndex] = useState(0);
+  const clubFilter: ClubFilter = section === 'all' || section == null ? allClub : section;
+  const setClubFilter = setAllClub;
   const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
   const [filterOpen, setFilterOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
@@ -84,7 +102,38 @@ export function LibraryView({
   );
   const showInstall = isIos() && !isStandalone() && !hideInstall;
   const swipeEnabled = !selecting;
+  const grouped = section != null && section !== 'all';
+  const tileSwings = useMemo(
+    () =>
+      TILES.map((tile) => {
+        const rows = swings.filter((swing) => clubGroup(swing.club) === tile.id);
+        return {
+          ...tile,
+          count: rows.length,
+          dtl: rows.filter((swing) => swing.view === 'dtl').length,
+          face: rows.filter((swing) => swing.view === 'face').length,
+          cover: rows.find((swing) => swing.thumbnail)?.thumbnail ?? null,
+        };
+      }),
+    [swings],
+  );
   const activeFilters = (clubFilter === 'all' ? 0 : 1) + (viewFilter === 'all' ? 0 : 1);
+
+  function setSection(next: Section) {
+    lastSection = next;
+    setSectionState(next);
+    setViewFilter('all');
+    setAllClub('all');
+    setSelecting(false);
+    setChosen([]);
+    setRevealedId(null);
+    setFilterOpen(false);
+  }
+
+  function goBack() {
+    if (section != null) setSection(null);
+    else onHome();
+  }
 
   useEffect(() => {
     if (!filterOpen) return;
@@ -130,7 +179,7 @@ export function LibraryView({
   return (
     <div className="screen">
       <header className="topbar library-top">
-        <button type="button" className="icon-btn" aria-label="Home" data-testid="library-home" onClick={onHome}>
+        <button type="button" className="icon-btn" aria-label="Home" data-testid="library-home" onClick={goBack}>
           <Icon name="back" />
         </button>
         <div className="brand">
@@ -158,7 +207,32 @@ export function LibraryView({
         </div>
       </header>
 
+      {section == null ? (
+        <div className="library-tools">
+          <button type="button" className="text-btn" data-testid="open-all" onClick={() => setSection('all')}>
+            All swings ({swings.length})
+          </button>
+        </div>
+      ) : (
       <div className="library-tools">
+        {grouped ? (
+          <div className="view-toggle" role="group" aria-label="Camera angle">
+            {VIEW_FILTERS.filter((item) => item.id !== 'all').map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="view-btn"
+                aria-pressed={viewFilter === item.id}
+                aria-label={item.name}
+                data-testid={`view-${item.id === 'face' ? 'fo' : item.id}`}
+                onClick={() => setViewFilter(viewFilter === item.id ? 'all' : item.id)}
+              >
+                {item.label}
+                <span>{clubFiltered.filter((swing) => swing.view === item.id).length}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
         <div className="filter-wrap" ref={filterRef}>
           <button
             type="button"
@@ -228,6 +302,7 @@ export function LibraryView({
             </div>
           )}
         </div>
+        )}
         <button
           type="button"
           className="text-btn"
@@ -243,8 +318,24 @@ export function LibraryView({
           Select
         </button>
       </div>
+      )}
 
+      {section == null ? (
+        <Carousel
+          tiles={tileSwings}
+          loaded={listed || error != null}
+          index={tileIndex}
+          onIndex={setTileIndex}
+          onPick={(id) => setSection(id)}
+        />
+      ) : (
       <div className="list-scroll">
+        {grouped && (
+          <h2 className="group-title" data-testid="group-title">
+            {TILES.find((tile) => tile.id === section)?.title}
+            <span>{visible.length} {visible.length === 1 ? 'swing' : 'swings'}</span>
+          </h2>
+        )}
         {showInstall && (
           <div className="note">
             <p>
@@ -308,8 +399,9 @@ export function LibraryView({
         )}
         <p className="privacy">Videos stay on this phone. Nothing is uploaded. Swipe a swing left to delete it.</p>
       </div>
+      )}
 
-      {selecting ? (
+      {selecting && section != null ? (
         <div className="bottom-bar">
           <button
             type="button"
@@ -332,12 +424,9 @@ export function LibraryView({
           </button>
         </div>
       ) : (
-        <div className="add-bar">
-          <button type="button" className="add-swing" data-testid="add-swing" onClick={onAdd}>
-            <Icon name="plus" />
-            Add swing
-          </button>
-        </div>
+        <button type="button" className="add-fab" data-testid="add-swing" aria-label="Add swing" onClick={onAdd}>
+          <Icon name="plus" />
+        </button>
       )}
 
       {driveOpen && DRIVE_ENABLED && (
@@ -366,6 +455,95 @@ export function LibraryView({
       )}
     </div>
   );
+}
+
+type TileInfo = {
+  id: Group;
+  title: string;
+  line: string;
+  count: number;
+  dtl: number;
+  face: number;
+  cover: Blob | null;
+};
+
+function Carousel({
+  tiles,
+  loaded,
+  index,
+  onIndex,
+  onPick,
+}: {
+  tiles: TileInfo[];
+  loaded: boolean;
+  index: number;
+  onIndex: (index: number) => void;
+  onPick: (id: Group) => void;
+}) {
+  const track = useRef<HTMLDivElement>(null);
+  return (
+    <div className="carousel-wrap">
+      <div
+        className="carousel"
+        ref={track}
+        data-testid="carousel"
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          const first = el.firstElementChild as HTMLElement | null;
+          const step = first ? first.offsetWidth + 14 : 1;
+          const next = Math.max(0, Math.min(tiles.length - 1, Math.round(el.scrollLeft / step)));
+          if (next !== index) onIndex(next);
+        }}
+      >
+        {tiles.map((tile) => (
+          <button
+            key={tile.id}
+            type="button"
+            className="tile"
+            data-testid={`tile-${tile.id}`}
+            onClick={() => onPick(tile.id)}
+          >
+            <span className="tile-head">
+              <span className="tile-title">{tile.title}</span>
+              <span className="tile-line">{tile.line}</span>
+            </span>
+            <span className="tile-photo">
+              <TileCover blob={tile.cover} />
+            </span>
+            <span className="tile-foot">
+              <span className="tile-count">
+                {loaded ? `${tile.count} ${tile.count === 1 ? 'swing' : 'swings'}` : ' '}
+              </span>
+              {loaded && tile.count > 0 && (
+                <span className="tile-views">
+                  DTL {tile.dtl} · FO {tile.face}
+                </span>
+              )}
+            </span>
+          </button>
+        ))}
+      </div>
+      <div className="carousel-dots" aria-hidden="true">
+        {tiles.map((tile, i) => (
+          <span key={tile.id} className={cx('dot', i === index && 'on')} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TileCover({ blob }: { blob: Blob | null }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!blob) {
+      setUrl(null);
+      return;
+    }
+    const next = URL.createObjectURL(blob);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [blob]);
+  return url ? <img className="tile-cover" src={url} alt="" /> : <span className="tile-cover tile-empty" />;
 }
 
 function FilterChip({

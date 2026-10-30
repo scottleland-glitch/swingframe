@@ -1,9 +1,10 @@
-export type ClubFilter = 'all' | 'driver' | 'iron' | 'wedge';
+export type ClubFilter = 'all' | 'driver' | 'iron' | 'wedge' | 'putter';
 
-/** Driver, iron, and wedge. Woods, hybrids, and the putter stay in All only. */
+/** Driver, iron, wedge, and putter. Woods and hybrids stay in All only. */
 export function clubGroup(club: string): Exclude<ClubFilter, 'all'> | 'other' {
   const text = club.trim().toLowerCase().replace(/[°º]/g, ' ');
   if (!text) return 'other';
+  if (/\bputt(er|ing)?\b/.test(text)) return 'putter';
   if (text.includes('wedge') || /\b(pw|gw|sw|lw|aw)\b/.test(text)) return 'wedge';
   if (/\bdriver\b/.test(text) || text === 'dr') return 'driver';
   const compact = text.replace(/[^a-z0-9]/g, '');
