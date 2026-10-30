@@ -539,12 +539,36 @@ export function keepLocalVideo(id: string, video: Blob): Promise<void> {
   });
 }
 
-/** Bytes still held for saved videos and thumbnails. */
-/** Space in use. The browser's own count, because adding up the videos meant reading every one into memory. */
+/** Video keys with no swing row. Only keys are read, never the videos. */
+async function dropOrphanVideos(): Promise<void> {
+  const db = await openDB();
+  const tx = db.transaction(['swings', 'videos'], 'readwrite');
+  const swingKeys = new Set<IDBValidKey>(await new Promise<IDBValidKey[]>((resolve, reject) => {
+    const req = tx.objectStore('swings').getAllKeys();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  }));
+  const videoKeys = await new Promise<IDBValidKey[]>((resolve, reject) => {
+    const req = tx.objectStore('videos').getAllKeys();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  for (const key of videoKeys) {
+    if (!swingKeys.has(key)) tx.objectStore('videos').delete(key);
+  }
+  await txDone(tx, 'Could not tidy saved videos.');
+}
+
+/**
+ * Space the saved swings take: the video size recorded with each swing that still keeps its video.
+ * The browser's own estimate also counts freed space and app files, and did not drop after deleting swings.
+ * Any video left behind without a swing is removed first.
+ */
 export async function storedUsage(): Promise<number> {
   try {
-    const estimate = await navigator.storage?.estimate?.();
-    return estimate?.usage ?? 0;
+    await enqueue(dropOrphanVideos);
+    const rows = await listSwings();
+    return rows.reduce((sum, row) => sum + (row.videoKept === false ? 0 : row.byteSize || 0), 0);
   } catch {
     return 0;
   }
