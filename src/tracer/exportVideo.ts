@@ -306,7 +306,7 @@ export async function offerRecording(blob: Blob, filename: string): Promise<'sha
   const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
   if (typeof nav.share === 'function' && nav.canShare?.({ files: [file] })) {
     try {
-      await nav.share({ files: [file], title: 'Swingframe tracer' });
+      await nav.share({ files: [file], title: 'My swing' });
       return 'shared';
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return 'cancelled';

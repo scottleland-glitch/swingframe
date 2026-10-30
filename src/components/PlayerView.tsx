@@ -168,6 +168,7 @@ export function PlayerView({
   const [exportNote, setExportNote] = useState<string | null>(null);
   const [immersive, setImmersive] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [ready, setReady] = useState<{ blob: Blob; name: string; note: string } | null>(null);
   const [exportProgress, setExportProgress] = useState(0);
   const exportAbort = useRef<AbortController | null>(null);
   const hydratedFor = useRef<string | null>(null);
@@ -1263,6 +1264,7 @@ export function PlayerView({
     const controller = new AbortController();
     exportAbort.current = controller;
     setExporting(true);
+    setReady(null);
     setExportProgress(0);
     void recordTracerVideo({
       blob,
@@ -1282,11 +1284,8 @@ export function PlayerView({
       .then(async (result) => {
         if (controller.signal.aborted) return;
         const extension = result.mime.includes('webm') ? 'webm' : 'mp4';
-        const offered = await offerRecording(result.blob, `swingframe-tracer.${extension}`);
-        if (controller.signal.aborted) return;
-        const done = offered === 'downloaded' ? `${result.note} A download started.` : result.note;
-        setTracerNote(done);
-        if (offered !== 'cancelled') setExportNote(done);
+        // The phone only opens its share sheet from a fresh tap, so hand the finished video to a Send button.
+        setReady({ blob: result.blob, name: `swingframe-swing.${extension}`, note: result.note });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -1403,6 +1402,27 @@ export function PlayerView({
           <p>Exporting… {Math.round(exportProgress * 100)}%</p>
           <button type="button" onClick={() => exportAbort.current?.abort()}>
             Cancel
+          </button>
+        </div>
+      )}
+
+      {ready && !exporting && (
+        <div className="export-banner" data-testid="share-ready" role="status">
+          <p>Video ready. Send it by text or email.</p>
+          <button
+            type="button"
+            data-testid="share-send"
+            onClick={() => {
+              void offerRecording(ready.blob, ready.name).then((result) => {
+                if (result === 'downloaded') setExportNote('Saved to your phone. Open Files or Photos to send it.');
+                if (result !== 'cancelled') setReady(null);
+              });
+            }}
+          >
+            Send
+          </button>
+          <button type="button" data-testid="share-dismiss" aria-label="Dismiss" onClick={() => setReady(null)}>
+            ✕
           </button>
         </div>
       )}
@@ -1682,11 +1702,11 @@ export function PlayerView({
             type="button"
             className="speed-pill"
             data-testid="export-clean"
-            aria-label="Export a clean video to share"
+            aria-label="Share this swing with your coach by text or email"
             disabled={exporting}
             onClick={startExport}
           >
-            {exporting ? '…' : 'Export'}
+            {exporting ? '…' : 'Share'}
           </button>
           <button
             type="button"
