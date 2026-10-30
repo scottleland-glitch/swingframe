@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { clubGroup, type ClubFilter } from '../clubs';
 import { deleteSwings, listSwings, storedUsage } from '../db';
 import { DRIVE_ENABLED } from '../driveConfig';
@@ -475,6 +475,9 @@ type TileInfo = {
   covers: Blob[];
 };
 
+/** Where the carousel was left, so coming back from a group shows the same tile. */
+let lastTile = 0;
+
 function Carousel({
   tiles,
   loaded,
@@ -489,47 +492,92 @@ function Carousel({
   onPick: (id: Group) => void;
 }) {
   const track = useRef<HTMLDivElement>(null);
+  const settle = useRef(0);
+  const n = tiles.length;
+  // Three copies in a row. After a swipe stops, the view jumps by one whole copy so it never runs out.
+  const copies = [0, 1, 2];
+
+  function geometry(el: HTMLDivElement) {
+    const first = el.children[0] as HTMLElement | undefined;
+    const second = el.children[1] as HTMLElement | undefined;
+    if (!first || !second) return null;
+    const step = second.offsetLeft - first.offsetLeft;
+    const base = first.offsetLeft + first.offsetWidth / 2 - el.clientWidth / 2;
+    return step > 0 ? { step, base } : null;
+  }
+
+  useLayoutEffect(() => {
+    const el = track.current;
+    if (!el) return;
+    const g = geometry(el);
+    if (!g) return;
+    const start = Math.min(Math.max(lastTile, 0), n - 1);
+    el.style.scrollSnapType = 'none';
+    el.scrollLeft = g.base + (n + start) * g.step;
+    onIndex(start);
+    requestAnimationFrame(() => {
+      el.style.scrollSnapType = '';
+    });
+    // Runs once when the carousel appears.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(settle.current), []);
+
+  function onScroll(el: HTMLDivElement) {
+    const g = geometry(el);
+    if (!g) return;
+    const raw = Math.round((el.scrollLeft - g.base) / g.step);
+    const shown = ((raw % n) + n) % n;
+    lastTile = shown;
+    if (shown !== index) onIndex(shown);
+    window.clearTimeout(settle.current);
+    settle.current = window.setTimeout(() => {
+      const now = Math.round((el.scrollLeft - g.base) / g.step);
+      const shift = now < n ? n : now >= 2 * n ? -n : 0;
+      if (shift === 0) return;
+      el.style.scrollSnapType = 'none';
+      el.scrollLeft += shift * g.step;
+      requestAnimationFrame(() => {
+        el.style.scrollSnapType = '';
+      });
+    }, 140);
+  }
+
   return (
     <div className="carousel-wrap">
-      <div
-        className="carousel"
-        ref={track}
-        data-testid="carousel"
-        onScroll={(event) => {
-          const el = event.currentTarget;
-          const first = el.firstElementChild as HTMLElement | null;
-          const step = first ? first.offsetWidth + 14 : 1;
-          const next = Math.max(0, Math.min(tiles.length - 1, Math.round(el.scrollLeft / step)));
-          if (next !== index) onIndex(next);
-        }}
-      >
-        {tiles.map((tile) => (
-          <button
-            key={tile.id}
-            type="button"
-            className="tile"
-            data-testid={`tile-${tile.id}`}
-            onClick={() => onPick(tile.id)}
-          >
-            <span className="tile-head">
-              <span className="tile-title">{tile.title}</span>
-              <span className="tile-line">{tile.line}</span>
-            </span>
-            <span className="tile-photo">
-              <TileCover blobs={tile.covers} />
-            </span>
-            <span className="tile-foot">
-              <span className="tile-count">
-                {loaded ? `${tile.count} ${tile.count === 1 ? 'swing' : 'swings'}` : ' '}
+      <div className="carousel" ref={track} data-testid="carousel" onScroll={(event) => onScroll(event.currentTarget)}>
+        {copies.flatMap((copy) =>
+          tiles.map((tile) => (
+            <button
+              key={`${copy}-${tile.id}`}
+              type="button"
+              className="tile"
+              data-testid={copy === 1 ? `tile-${tile.id}` : undefined}
+              aria-hidden={copy === 1 ? undefined : true}
+              tabIndex={copy === 1 ? 0 : -1}
+              onClick={() => onPick(tile.id)}
+            >
+              <span className="tile-head">
+                <span className="tile-title">{tile.title}</span>
+                <span className="tile-line">{tile.line}</span>
               </span>
-              {loaded && tile.count > 0 && (
-                <span className="tile-views">
-                  DTL {tile.dtl} · FO {tile.face}
+              <span className="tile-photo">
+                <TileCover blobs={tile.covers} />
+              </span>
+              <span className="tile-foot">
+                <span className="tile-count">
+                  {loaded ? `${tile.count} ${tile.count === 1 ? 'swing' : 'swings'}` : ' '}
                 </span>
-              )}
-            </span>
-          </button>
-        ))}
+                {loaded && tile.count > 0 && (
+                  <span className="tile-views">
+                    DTL {tile.dtl} · FO {tile.face}
+                  </span>
+                )}
+              </span>
+            </button>
+          )),
+        )}
       </div>
       <div className="carousel-dots" aria-hidden="true">
         {tiles.map((tile, i) => (
