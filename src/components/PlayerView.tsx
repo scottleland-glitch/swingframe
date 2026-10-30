@@ -1607,8 +1607,7 @@ export function PlayerView({
                 rememberTracer(shotRef.current, { ...calRef.current, color: next }, true);
               }}
             >
-              <span className="color-dot" style={{ background: tracerColorOf(activeCal.color) }} />
-              Color
+              <span className="tracer-dot" style={{ background: tracerColorOf(activeCal.color) }} />
             </button>
           )}
           <button
