@@ -1,3 +1,4 @@
+import { canvasLooksBlack } from './thumbs';
 import { loadInlineSource, markInline } from './inlineVideo';
 
 export interface ProbeResult {
@@ -69,7 +70,7 @@ async function snapshot(video: HTMLVideoElement): Promise<Blob | null> {
   } catch {
     return null;
   }
-  if (frameLooksBlank(ctx, w, h)) {
+  if (frameLooksBlank(ctx, w, h) || canvasLooksBlack(canvas)) {
     try {
       await video.play();
       await new Promise((resolve) => window.setTimeout(resolve, 80));

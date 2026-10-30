@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { DRAW_COLORS, FPS_OPTIONS, SLOWMO_OPTIONS, SPEEDS } from '../constants';
-import { dbDiagnostics, deleteSwing, getVideo, listSwings, releaseLocalVideo } from '../db';
+import { dbDiagnostics, deleteSwing, getVideo, listSwings, releaseLocalVideo, updateSwing } from '../db';
 import { backupSwing, downloadSwingVideo } from '../driveApi';
 import { DRIVE_ENABLED } from '../driveConfig';
 import { connectGoogle, googleConnected } from '../googleAuth';
@@ -27,6 +27,7 @@ import { Icon, type IconName } from './Icons';
 import { Scrubber } from './Scrubber';
 import { TracerPanel, missingCritical } from './TracerPanel';
 import { VideoStage, type VideoEngine } from './VideoStage';
+import { blobLooksBlack, canvasLooksBlack, canvasToThumbnail } from '../thumbs';
 
 const HINTS: Record<Tool, string> = {
   select: 'Two fingers move, pinch, or turn a drawing. Drag a white handle with one finger to fine-tune.',
@@ -317,6 +318,39 @@ export function PlayerView({
     },
     [seedFor],
   );
+
+  // A blank thumbnail is replaced with a real frame once the player has drawn one.
+  const needsThumb = load.status === 'ready' && swing?.id === id;
+  const thumbHad = swing?.thumbnail ?? null;
+  useEffect(() => {
+    if (!needsThumb) return;
+    let cancelled = false;
+    let timer = 0;
+    let tries = 0;
+    void (async () => {
+      if (thumbHad && thumbHad.size > 0 && !(await blobLooksBlack(thumbHad))) return;
+      const attempt = async () => {
+        if (cancelled) return;
+        tries += 1;
+        const frame = stageRef.current?.captureFrame() ?? null;
+        if (frame && !canvasLooksBlack(frame)) {
+          const blob = await canvasToThumbnail(frame);
+          if (blob && blob.size > 0 && !cancelled) {
+            await updateSwing(id, { thumbnail: blob }).catch(() => undefined);
+            return;
+          }
+        }
+        if (tries < 40) timer = window.setTimeout(() => void attempt(), 500);
+      };
+      timer = window.setTimeout(() => void attempt(), 600);
+    })();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+    // thumbHad is read once per opened swing on purpose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsThumb, id]);
 
   useEffect(() => {
     if ((setupPhase !== 'aim' && setupPhase !== 'ball' && setupPhase !== 'start') || !swing || swing.id !== id || swing.view !== 'dtl') return;

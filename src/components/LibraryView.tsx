@@ -9,6 +9,7 @@ import { APP_VERSION } from '../version';
 import { Dialog } from './Dialog';
 import { DriveSheet } from './DriveSheet';
 import { Icon } from './Icons';
+import { blobLooksBlack } from '../thumbs';
 
 type ViewFilter = 'all' | ViewAngle;
 
@@ -539,30 +540,6 @@ function Carousel({
   );
 }
 
-/** True when a picture is nearly all black, which is how a thumbnail looks if the phone gave a blank frame. */
-async function looksBlack(blob: Blob): Promise<boolean> {
-  const url = URL.createObjectURL(blob);
-  try {
-    const img = new Image();
-    img.src = url;
-    await img.decode();
-    const canvas = document.createElement('canvas');
-    canvas.width = 24;
-    canvas.height = 24;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return false;
-    ctx.drawImage(img, 0, 0, 24, 24);
-    const data = ctx.getImageData(0, 0, 24, 24).data;
-    let total = 0;
-    for (let i = 0; i < data.length; i += 4) total += data[i] + data[i + 1] + data[i + 2];
-    return total / (24 * 24 * 3) < 10;
-  } catch {
-    return false;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
 /** Shows the first swing's thumbnail in list order, skipping any that came out blank. */
 function TileCover({ blobs }: { blobs: Blob[] }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -572,7 +549,7 @@ function TileCover({ blobs }: { blobs: Blob[] }) {
     void (async () => {
       let pick: Blob | null = blobs[0] ?? null;
       for (const blob of blobs) {
-        if (!(await looksBlack(blob))) {
+        if (!(await blobLooksBlack(blob))) {
           pick = blob;
           break;
         }
