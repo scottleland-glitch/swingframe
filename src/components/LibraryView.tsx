@@ -15,6 +15,7 @@ type ViewFilter = 'all' | ViewAngle;
 const CLUB_FILTERS: { id: ClubFilter; label: string; name: string }[] = [
   { id: 'all', label: 'All', name: 'All clubs' },
   { id: 'driver', label: 'Driver', name: 'Driver' },
+  { id: 'wood', label: 'Wood', name: 'Woods' },
   { id: 'iron', label: 'Iron', name: 'Iron' },
   { id: 'wedge', label: 'Wedge', name: 'Wedge' },
   { id: 'putter', label: 'Putt', name: 'Putter' },
@@ -25,6 +26,7 @@ type Section = Group | 'all' | null;
 
 const TILES: { id: Group; title: string; line: string }[] = [
   { id: 'driver', title: 'Driver', line: 'Off the tee' },
+  { id: 'wood', title: 'Woods', line: 'Fairway woods and hybrids' },
   { id: 'iron', title: 'Irons', line: 'Mid and short irons' },
   { id: 'wedge', title: 'Wedges', line: 'Scoring clubs' },
   { id: 'putter', title: 'Putting', line: 'On the green' },

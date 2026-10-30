@@ -3,9 +3,10 @@ import { clubGroup } from './clubs';
 import { viewLabel } from './format';
 
 describe('club groups', () => {
-  it('keeps woods, hybrids, and unset clubs out of the four groups', () => {
-    for (const club of ['3W', '5W', '3 wood', 'Hybrid', '4h', '4 hybrid', '']) {
-      expect(clubGroup(club)).toBe('other');
+  it('puts woods and hybrids in the wood group and leaves unset clubs out', () => {
+    expect(clubGroup('')).toBe('other');
+    for (const club of ['3W', '5W', '3 wood', 'Hybrid', '4h', '4 hybrid']) {
+      expect(clubGroup(club)).toBe('wood');
     }
   });
 

@@ -1641,7 +1641,8 @@ textarea { resize: vertical; }
 
 .add-fab {
   position: fixed;
-  right: calc(16px + var(--safe-right));
+  left: 50%;
+  transform: translateX(-50%);
   bottom: calc(16px + var(--safe-bottom));
   z-index: 6;
   width: 52px; height: 52px; border-radius: 50%;
