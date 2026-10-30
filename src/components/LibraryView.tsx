@@ -119,7 +119,7 @@ export function LibraryView({
           count: rows.length,
           dtl: rows.filter((swing) => swing.view === 'dtl').length,
           face: rows.filter((swing) => swing.view === 'face').length,
-          cover: rows.find((swing) => swing.thumbnail)?.thumbnail ?? null,
+          covers: rows.flatMap((swing) => (swing.thumbnail ? [swing.thumbnail] : [])).slice(0, 6),
         };
       }),
     [swings],
@@ -471,7 +471,7 @@ type TileInfo = {
   count: number;
   dtl: number;
   face: number;
-  cover: Blob | null;
+  covers: Blob[];
 };
 
 function Carousel({
@@ -515,7 +515,7 @@ function Carousel({
               <span className="tile-line">{tile.line}</span>
             </span>
             <span className="tile-photo">
-              <TileCover blob={tile.cover} />
+              <TileCover blobs={tile.covers} />
             </span>
             <span className="tile-foot">
               <span className="tile-count">
@@ -539,17 +539,57 @@ function Carousel({
   );
 }
 
-function TileCover({ blob }: { blob: Blob | null }) {
+/** True when a picture is nearly all black, which is how a thumbnail looks if the phone gave a blank frame. */
+async function looksBlack(blob: Blob): Promise<boolean> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = 24;
+    canvas.height = 24;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return false;
+    ctx.drawImage(img, 0, 0, 24, 24);
+    const data = ctx.getImageData(0, 0, 24, 24).data;
+    let total = 0;
+    for (let i = 0; i < data.length; i += 4) total += data[i] + data[i + 1] + data[i + 2];
+    return total / (24 * 24 * 3) < 10;
+  } catch {
+    return false;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Shows the first swing's thumbnail in list order, skipping any that came out blank. */
+function TileCover({ blobs }: { blobs: Blob[] }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
-    if (!blob) {
-      setUrl(null);
-      return;
-    }
-    const next = URL.createObjectURL(blob);
-    setUrl(next);
-    return () => URL.revokeObjectURL(next);
-  }, [blob]);
+    let cancel = false;
+    let made: string | null = null;
+    void (async () => {
+      let pick: Blob | null = blobs[0] ?? null;
+      for (const blob of blobs) {
+        if (!(await looksBlack(blob))) {
+          pick = blob;
+          break;
+        }
+      }
+      if (cancel) return;
+      if (!pick) {
+        setUrl(null);
+        return;
+      }
+      made = URL.createObjectURL(pick);
+      setUrl(made);
+    })();
+    return () => {
+      cancel = true;
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [blobs]);
   return url ? <img className="tile-cover" src={url} alt="" /> : <span className="tile-cover tile-empty" />;
 }
 
