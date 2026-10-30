@@ -95,29 +95,60 @@ function paintAngleLabel(
   ctx.fillText(label, lx, ly);
 }
 
-function paintLineLean(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, color: string, w: number, h: number) {
-  const lean = lineLean(a, b, w, h);
-  if (!lean) return;
+let measureCtx: CanvasRenderingContext2D | null = null;
+const LABEL_FONT = '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+/** Where a line's angle readout sits, as a box in pixels. */
+function lineLabelLayout(
+  d: Extract<Drawing, { type: 'line' }>,
+  w: number,
+  h: number,
+  ctx?: CanvasRenderingContext2D,
+): { label: string; cx: number; cy: number; tw: number } | null {
+  const lean = lineLean(d.a, d.b, w, h, d.ref);
+  if (!lean) return null;
   const label = `${lean.deg.toFixed(1)}° ${lean.from === 'vertical' ? 'vert' : 'horiz'}`;
-  const ax = a.x * w;
-  const ay = a.y * h;
-  const bx = b.x * w;
-  const by = b.y * h;
+  let m = ctx;
+  if (!m) {
+    measureCtx ??= document.createElement('canvas').getContext('2d');
+    m = measureCtx ?? undefined;
+  }
+  if (m) m.font = LABEL_FONT;
+  const tw = m ? m.measureText(label).width : label.length * 7.5;
+  const ax = d.a.x * w;
+  const ay = d.a.y * h;
+  const bx = d.b.x * w;
+  const by = d.b.y * h;
   const len = Math.hypot(bx - ax, by - ay);
-  // Sit the label beside the middle of the line, off to the side it leans away from.
   const nx = -(by - ay) / len;
   const ny = (bx - ax) / len;
   const side = nx >= 0 ? 1 : -1;
-  ctx.font = '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-  const tw = ctx.measureText(label).width;
-  let lx = (ax + bx) / 2 + side * nx * (tw / 2 + 18);
-  let ly = (ay + by) / 2 + side * ny * 22;
-  lx = Math.min(w - tw / 2 - 8, Math.max(tw / 2 + 8, lx));
-  ly = Math.min(h - 14, Math.max(14, ly));
+  let cx = (ax + bx) / 2 + side * nx * (tw / 2 + 18);
+  let cy = (ay + by) / 2 + side * ny * 22;
+  cx = Math.min(w - tw / 2 - 8, Math.max(tw / 2 + 8, cx));
+  cy = Math.min(h - 14, Math.max(14, cy));
+  return { label, cx, cy, tw };
+}
+
+/** True when a point (normalized) lands on a line's angle readout. Tapping it flips vertical and horizontal. */
+export function hitLineLabel(d: Drawing, p: Pt, w: number, h: number): boolean {
+  if (d.type !== 'line') return false;
+  const box = lineLabelLayout(d, w, h);
+  if (!box) return false;
+  const px = p.x * w;
+  const py = p.y * h;
+  return Math.abs(px - box.cx) <= box.tw / 2 + 14 && Math.abs(py - box.cy) <= 20;
+}
+
+function paintLineLean(ctx: CanvasRenderingContext2D, d: Extract<Drawing, { type: 'line' }>, w: number, h: number) {
+  const box = lineLabelLayout(d, w, h, ctx);
+  if (!box) return;
+  const { label, cx: lx, cy: ly, tw } = box;
+  ctx.font = LABEL_FONT;
   roundedRect(ctx, lx - tw / 2 - 7, ly - 11, tw + 14, 22, 7);
   ctx.fillStyle = 'rgba(8,12,10,0.82)';
   ctx.fill();
-  ctx.fillStyle = color;
+  ctx.fillStyle = d.color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(label, lx, ly);
@@ -151,7 +182,7 @@ function paintOne(ctx: CanvasRenderingContext2D, d: Drawing, w: number, h: numbe
         dot(ctx, ax, ay, color, 4);
         dot(ctx, bx, by, color, 4);
       }
-      paintLineLean(ctx, d.a, d.b, color, w, h);
+      paintLineLean(ctx, d, w, h);
       break;
     }
     case 'pen': {

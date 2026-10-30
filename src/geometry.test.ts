@@ -129,3 +129,18 @@ describe('two-finger placement', () => {
     expect(turned.b.y).toBeCloseTo(0.6);
   });
 });
+
+describe('lineLean', () => {
+  it('picks the closer reference, or the one asked for', async () => {
+    const { lineLean } = await import('./geometry');
+    const spine = lineLean({ x: 0.5, y: 0.2 }, { x: 0.6, y: 0.7 }, 100, 100);
+    expect(spine?.from).toBe('vertical');
+    expect(spine?.deg).toBeCloseTo(11.3, 1);
+    const shaft = { a: { x: 0.2, y: 0.8 }, b: { x: 0.5, y: 0.35 } };
+    const auto = lineLean(shaft.a, shaft.b, 100, 100);
+    expect(auto?.from).toBe('vertical');
+    const flat = lineLean(shaft.a, shaft.b, 100, 100, 'horizontal');
+    expect(flat?.from).toBe('horizontal');
+    expect(flat!.deg + auto!.deg).toBeCloseTo(90, 5);
+  });
+});
