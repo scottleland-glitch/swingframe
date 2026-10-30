@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { formatTime } from '../format';
+import { Icon } from './Icons';
 import type { ShotData, ShotField, TracerCalibration, ViewAngle } from '../types';
 import { editShot, mergeScreen, simulateShot } from '../tracer/flight';
 import { readShotScreenshot } from '../tracer/ocr';
@@ -15,6 +16,13 @@ const FIELDS: { key: ShotField; label: string; unit: string; step: string; signe
   { key: 'clubPath', label: 'Club path', unit: '°', step: '0.1', signed: true },
   { key: 'faceToTarget', label: 'Face angle', unit: '°', step: '0.1', signed: true },
 ];
+
+/** Without all five of these the flight cannot be drawn. */
+export const CRITICAL_FIELDS: ShotField[] = ['vla', 'ballSpeed', 'clubPath', 'faceToTarget', 'spin'];
+
+export function missingCritical(shot: ShotData): ShotField[] {
+  return CRITICAL_FIELDS.filter((key) => shot[key] == null);
+}
 
 const SOURCE_LABEL = { screen: 'screenshot', typed: 'typed', model: 'calculated' } as const;
 
@@ -47,6 +55,8 @@ export function TracerPanel({
   onExport,
   onBack,
   numbersOnly,
+  showMissing,
+  reserveBottom,
 }: {
   view: ViewAngle;
   shot: ShotData;
@@ -64,7 +74,12 @@ export function TracerPanel({
   onBack: () => void;
   /** Five launch inputs and the screenshot reader. Nothing else. */
   numbersOnly?: boolean;
+  /** Mark every empty critical number in red. */
+  showMissing?: boolean;
+  /** Leave room under Done for the Keep and Discard pills. */
+  reserveBottom?: boolean;
 }) {
+  const [infoOpen, setInfoOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [reading, setReading] = useState(false);
   const [localNote, setLocalNote] = useState<string | null>(null);
@@ -101,7 +116,26 @@ export function TracerPanel({
 
   return (
     <div className="panel-page" data-testid={numbersOnly ? 'numbers-sheet' : 'tracer-panel'}>
-      <h2>{numbersOnly ? 'Launch' : 'Tracer'}</h2>
+      <h2>
+        {numbersOnly ? 'Launch' : 'Tracer'}
+        {numbersOnly && (
+          <button
+            type="button"
+            className="info-btn"
+            data-testid="numbers-info"
+            aria-label="About these numbers"
+            aria-pressed={infoOpen}
+            onClick={() => setInfoOpen((open) => !open)}
+          >
+            <Icon name="info" />
+          </button>
+        )}
+      </h2>
+      {numbersOnly && infoOpen && (
+        <p className="panel-hint" data-testid="numbers-info-text">
+          L and R are degrees left or right of the aim line. Launch Direction (HLA) is the start line. Enter club path and face angle (center strike) and the start line and spin axis are worked out for you, unless you type them. Spin axis curves the ball off that line, and the aim point is not the landing.
+        </p>
+      )}
       {!numbersOnly && (
         <p className="panel-hint">
           {view === 'face' ? 'Face On.' : 'Down the Line.'} Place the aim, ball, and horizon with the tracer button, or Manual trace for a drawn flight. Lock is the last setup step. Launch numbers are the 123 button.
@@ -154,7 +188,11 @@ export function TracerPanel({
           const signed = Boolean(field.signed);
           const side = sideFor(field.key);
           return (
-            <div key={field.key} className="tracer-row">
+            <div
+              key={field.key}
+              className={`tracer-row${showMissing && CRITICAL_FIELDS.includes(field.key) && shot[field.key] == null ? ' is-missing' : ''}`}
+              data-testid={`tracer-row-${field.key}`}
+            >
               <span>
                 {field.label}
                 <em>
@@ -242,15 +280,20 @@ export function TracerPanel({
           {flightSummary(flight.carryYd, flight.apexFt, flight.curveYd)}
         </p>
       )}
-      <p className="panel-hint">
-        L and R are degrees left or right of the aim line. Launch Direction (HLA) is the start line. Enter club path and face angle (center strike) and the start line and spin axis are worked out for you, unless you type them. Spin axis curves the ball off that line, and the aim point is not the landing.
-      </p>
       </fieldset>
       )}
       {numbersOnly && (
-        <button type="button" className="btn primary" data-testid="numbers-done" onClick={onBack}>
-          Done
-        </button>
+        <>
+          {showMissing && missingCritical(shot).length > 0 && (
+            <p className="tracer-missing" data-testid="numbers-missing">
+              Fill the red boxes so the tracer can play.
+            </p>
+          )}
+          <button type="button" className="btn primary" data-testid="numbers-done" onClick={onBack}>
+            Done
+          </button>
+          {reserveBottom && <div className="keep-gap" aria-hidden="true" />}
+        </>
       )}
       {!numbersOnly && (
       <>

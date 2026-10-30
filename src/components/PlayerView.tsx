@@ -25,7 +25,7 @@ import { DetailsSheet } from './DetailsSheet';
 import { Dialog } from './Dialog';
 import { Icon, type IconName } from './Icons';
 import { Scrubber } from './Scrubber';
-import { TracerPanel } from './TracerPanel';
+import { TracerPanel, missingCritical } from './TracerPanel';
 import { VideoStage, type VideoEngine } from './VideoStage';
 
 const HINTS: Record<Tool, string> = {
@@ -157,6 +157,7 @@ export function PlayerView({
   const [draftPoint, setDraftPoint] = useState<Pt | null>(null);
   const [feetTick, setFeetTick] = useState(0);
   const [numbersOpen, setNumbersOpen] = useState(false);
+  const [numbersFlag, setNumbersFlag] = useState(false);
   const [shapesOpen, setShapesOpen] = useState(false);
   const [aimGuides, setAimGuides] = useState<{ toe: [Pt, Pt]; parallel: [Pt, Pt] } | null>(null);
   const [shot, setShot] = useState<ShotData | null>(null);
@@ -978,6 +979,17 @@ export function PlayerView({
     [enterStep, rememberTracer],
   );
 
+  /** Close the numbers sheet. A swing that is being kept, or already has a tracer, needs all five critical numbers first. */
+  const tryCloseNumbers = useCallback(() => {
+    const needs = swing?.draft === true || calRef.current.impactTime != null;
+    if (needs && missingCritical(shotRef.current).length > 0) {
+      setNumbersFlag(true);
+      return;
+    }
+    setNumbersFlag(false);
+    setNumbersOpen(false);
+  }, [swing?.draft]);
+
   const markImpact = useCallback(() => {
     const time = stageRef.current?.getTime() ?? 0;
     commitImpact(time);
@@ -1703,7 +1715,8 @@ export function PlayerView({
             aria-pressed={numbersOpen}
             data-testid="numbers-toggle"
             onClick={() => {
-              setNumbersOpen((open) => !open);
+              if (numbersOpen) tryCloseNumbers();
+              else setNumbersOpen(true);
               setToolsOpen(false);
               setHelpOpen(false);
             }}
@@ -1961,10 +1974,10 @@ export function PlayerView({
 
       {numbersOpen && (
         <div
-          className="tool-backdrop is-tracer is-numbers"
+          className={cx('tool-backdrop is-tracer is-numbers', swing?.draft && 'has-keep')}
           data-testid="numbers-backdrop"
           onPointerDown={(event) => {
-            if (event.target === event.currentTarget) setNumbersOpen(false);
+            if (event.target === event.currentTarget) tryCloseNumbers();
           }}
         >
           <div className="tool-panel" role="dialog" aria-label="Launch numbers">
@@ -1983,7 +1996,9 @@ export function PlayerView({
               canClear={tracerIsSet(activeShot, activeCal)}
               exporting={exporting}
               onExport={startExport}
-              onBack={() => setNumbersOpen(false)}
+              onBack={tryCloseNumbers}
+              showMissing={numbersFlag}
+              reserveBottom={swing?.draft === true}
             />
           </div>
         </div>

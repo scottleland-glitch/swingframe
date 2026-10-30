@@ -35,6 +35,7 @@ export type IconName =
   | 'tracer'
   | 'erase'
   | 'help'
+  | 'info'
   | 'draw'
   | 'crosshair'
   | 'markerEdit'
@@ -256,6 +257,14 @@ function paths(name: IconName) {
         <>
           <path d="M4 16.5 12 8l5 5-6.5 6.5H4v-3Z" />
           <path d="M14 18h6" />
+        </>
+      );
+    case 'info':
+      return (
+        <>
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M12 11v5.5" />
+          <path d="M12 7.6h.01" />
         </>
       );
     case 'help':
