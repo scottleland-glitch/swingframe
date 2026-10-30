@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AddSwingSheet } from './components/AddSwingSheet';
-import { LibraryView } from './components/LibraryView';
+import { LibraryView, resetLibrarySection } from './components/LibraryView';
 import { PlayerView } from './components/PlayerView';
 import { WelcomeView } from './components/WelcomeView';
 import type { Route } from './types';
@@ -26,6 +26,8 @@ export function App() {
   const [route, setRoute] = useState<Route>(initial.route);
   const [adding, setAdding] = useState(initial.adding);
   const [version, setVersion] = useState(0);
+  const routeRef = useRef(route.name);
+  routeRef.current = route.name;
 
   useEffect(() => {
     if (!isRoute((window.history.state as Partial<Hist> | null)?.route)) {
@@ -35,6 +37,13 @@ export function App() {
       const state = event.state as Partial<Hist> | null;
       if (!state || !isRoute(state.route)) {
         setRoute({ name: 'welcome' });
+        setAdding(false);
+        return;
+      }
+      // Closing a swing never lands on the welcome screen. History is the home base once inside the app.
+      if (state.route.name === 'welcome' && routeRef.current === 'player') {
+        window.history.replaceState({ route: { name: 'library' }, adding: false } satisfies Hist, '');
+        setRoute({ name: 'library' });
         setAdding(false);
         return;
       }
@@ -91,11 +100,16 @@ export function App() {
           onClose={closeAdd}
           onSaved={(id) => {
             setVersion((value) => value + 1);
+            resetLibrarySection();
             // Open the saved swing right away. Replace the add-sheet history entry so Back returns to where they started.
             const next: Route = { name: 'player', id };
             const state = window.history.state as Partial<Hist> | null;
             const hist: Hist = { route: next, adding: false };
-            if (state?.adding) window.history.replaceState(hist, '');
+            if (route.name === 'welcome') {
+              // Started from the welcome screen: put History under the player so Back lands there.
+              window.history.replaceState({ route: { name: 'library' }, adding: false } satisfies Hist, '');
+              window.history.pushState(hist, '');
+            } else if (state?.adding) window.history.replaceState(hist, '');
             else window.history.pushState(hist, '');
             setRoute(next);
             setAdding(false);

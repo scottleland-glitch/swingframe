@@ -1757,7 +1757,7 @@ export function PlayerView({
 
       {toolsOpen && (
         <div
-          className={cx('tool-backdrop', panelPage === 'tracer' && 'is-tracer')}
+          className={cx('tool-backdrop', panelPage === 'tracer' && 'is-tracer', swing?.draft && 'has-keep')}
           data-testid="tool-panel"
           onPointerDown={(event) => {
             if (event.target === event.currentTarget) setToolsOpen(false);

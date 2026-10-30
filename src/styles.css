@@ -1652,3 +1652,6 @@ textarea { resize: vertical; }
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
 }
 .add-fab .icon { width: 24px; height: 24px; stroke-width: 2.4; }
+
+/* Keep and Discard sit above the control bar, so tool panels stop above them. */
+.tool-backdrop.has-keep:not(.is-numbers) { bottom: calc(var(--player-bar-height) + 72px); }

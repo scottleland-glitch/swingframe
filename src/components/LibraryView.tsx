@@ -35,6 +35,11 @@ const TILES: { id: Group; title: string; line: string }[] = [
 /** Remembers where History was left, so coming back from a swing lands in the same group. */
 let lastSection: Section = null;
 
+/** A newly saved swing sends History back to the carousel when the swing is closed. */
+export function resetLibrarySection() {
+  lastSection = null;
+}
+
 const VIEW_FILTERS: { id: ViewFilter; label: string; name: string }[] = [
   { id: 'all', label: 'All', name: 'All views' },
   { id: 'dtl', label: 'DTL', name: 'Down the Line' },
