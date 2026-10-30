@@ -59,7 +59,6 @@ const DRAW_TOOLS: { id: Tool; label: string; icon: IconName }[] = [
   { id: 'circle', label: 'Circle', icon: 'circle' },
   { id: 'line', label: 'Line', icon: 'line' },
   { id: 'erase', label: 'Erase', icon: 'erase' },
-  { id: 'angle', label: 'Angle', icon: 'angle' },
   { id: 'pen', label: 'Freehand', icon: 'pen' },
   { id: 'hline', label: 'Level', icon: 'hline' },
   { id: 'vline', label: 'Plumb', icon: 'vline' },

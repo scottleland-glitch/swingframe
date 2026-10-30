@@ -1,4 +1,4 @@
-import { angleArc, angleDegrees, boxFrame, extendLine } from './geometry';
+import { angleArc, angleDegrees, boxFrame, extendLine, lineLean } from './geometry';
 import type { Drawing, Pt } from './types';
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -95,6 +95,34 @@ function paintAngleLabel(
   ctx.fillText(label, lx, ly);
 }
 
+function paintLineLean(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, color: string, w: number, h: number) {
+  const lean = lineLean(a, b, w, h);
+  if (!lean) return;
+  const label = `${lean.deg.toFixed(1)}° ${lean.from === 'vertical' ? 'vert' : 'horiz'}`;
+  const ax = a.x * w;
+  const ay = a.y * h;
+  const bx = b.x * w;
+  const by = b.y * h;
+  const len = Math.hypot(bx - ax, by - ay);
+  // Sit the label beside the middle of the line, off to the side it leans away from.
+  const nx = -(by - ay) / len;
+  const ny = (bx - ax) / len;
+  const side = nx >= 0 ? 1 : -1;
+  ctx.font = '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  const tw = ctx.measureText(label).width;
+  let lx = (ax + bx) / 2 + side * nx * (tw / 2 + 18);
+  let ly = (ay + by) / 2 + side * ny * 22;
+  lx = Math.min(w - tw / 2 - 8, Math.max(tw / 2 + 8, lx));
+  ly = Math.min(h - 14, Math.max(14, ly));
+  roundedRect(ctx, lx - tw / 2 - 7, ly - 11, tw + 14, 22, 7);
+  ctx.fillStyle = 'rgba(8,12,10,0.82)';
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, lx, ly);
+}
+
 function paintOne(ctx: CanvasRenderingContext2D, d: Drawing, w: number, h: number, selected: boolean) {
   const color = d.color;
   const width = selected ? 3 : 2.25;
@@ -123,6 +151,7 @@ function paintOne(ctx: CanvasRenderingContext2D, d: Drawing, w: number, h: numbe
         dot(ctx, ax, ay, color, 4);
         dot(ctx, bx, by, color, 4);
       }
+      paintLineLean(ctx, d.a, d.b, color, w, h);
       break;
     }
     case 'pen': {

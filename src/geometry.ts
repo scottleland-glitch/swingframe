@@ -32,6 +32,19 @@ export function angleDegrees(a: Pt, v: Pt, b: Pt, w: number, h: number): number 
   return Number.isFinite(deg) ? deg : 0;
 }
 
+/**
+ * How far a line leans off the plumb line, or off level for flatter lines.
+ * Measured on screen. Returns degrees (0 to 45) and which reference it is off.
+ */
+export function lineLean(a: Pt, b: Pt, w: number, h: number): { deg: number; from: 'vertical' | 'horizontal' } | null {
+  const dx = Math.abs((b.x - a.x) * w);
+  const dy = Math.abs((b.y - a.y) * h);
+  if (Math.hypot(dx, dy) < 4) return null;
+  const offVertical = (Math.atan2(dx, dy) * 180) / Math.PI;
+  if (offVertical <= 45) return { deg: offVertical, from: 'vertical' };
+  return { deg: 90 - offVertical, from: 'horizontal' };
+}
+
 /** Canvas arc from the first ray toward the second, using the minor sweep. */
 export function angleArc(
   a: Pt,
