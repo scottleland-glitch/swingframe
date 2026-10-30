@@ -1159,6 +1159,10 @@ textarea { resize: vertical; }
 }
 .bar-icon .icon { width: 24px; height: 24px; stroke-width: 1.7; }
 .bar-icon:disabled { opacity: 0.28; }
+.bar-icon.share-btn { margin-left: auto; flex: 0 0 auto; width: 44px; min-height: 36px; height: 36px; }
+.bar-icon.share-btn .icon { width: 22px; height: 22px; }
+.share-wait { font-weight: 700; font-size: 18px; }
+.trim-readout + .bar-icon.share-btn { margin-left: 8px; }
 .bar-play .icon { width: 28px; height: 28px; }
 .panel-clear { width: 100%; margin-top: 10px; }
 .bar-icon.is-on { background: rgba(0, 0, 0, 0.08); }

@@ -1701,16 +1701,6 @@ export function PlayerView({
           <button
             type="button"
             className="speed-pill"
-            data-testid="export-clean"
-            aria-label="Share this swing with your coach by text or email"
-            disabled={exporting}
-            onClick={startExport}
-          >
-            {exporting ? '…' : 'Share'}
-          </button>
-          <button
-            type="button"
-            className="speed-pill"
             data-testid="full-screen"
             aria-label="Full screen"
             onClick={() => {
@@ -1737,6 +1727,16 @@ export function PlayerView({
               {trimIn != null ? formatTime(trimIn) : '0:00.0'} – {trimOut != null ? formatTime(trimOut) : 'end'}
             </span>
           ) : null}
+          <button
+            type="button"
+            className="bar-icon share-btn"
+            data-testid="export-clean"
+            aria-label="Share this swing with your coach by text or email"
+            disabled={exporting}
+            onClick={startExport}
+          >
+            {exporting ? <span className="share-wait">…</span> : <Icon name="share" />}
+          </button>
         </div>
         <div className="bar-transport">
           <button type="button" className="bar-icon" aria-label="Previous frame" data-testid="play-back" onClick={() => step(-1)}>

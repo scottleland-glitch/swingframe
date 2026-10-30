@@ -45,7 +45,8 @@ export type IconName =
   | 'shapeDraw'
   | 'shapeStraight'
   | 'shapeFade'
-  | 'restart';
+  | 'restart'
+  | 'share';
 
 export function Icon({ name }: { name: IconName }) {
   return (
@@ -273,6 +274,14 @@ function paths(name: IconName) {
           <circle cx="12" cy="12" r="8" />
           <path d="M9.5 9.5a2.5 2.5 0 1 1 3.2 2.4c-.7.3-1.2.8-1.2 1.6" />
           <path d="M12 17h.01" />
+        </>
+      );
+    case 'share':
+      return (
+        <>
+          <path d="M12 3.5v11.5" />
+          <path d="M8.2 7.2 12 3.5l3.8 3.7" />
+          <path d="M8.5 10.2H7a1.7 1.7 0 0 0-1.7 1.7v6.6A1.7 1.7 0 0 0 7 20.2h10a1.7 1.7 0 0 0 1.7-1.7v-6.6A1.7 1.7 0 0 0 17 10.2h-1.5" />
         </>
       );
     case 'draw':
