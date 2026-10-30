@@ -15,7 +15,7 @@ import { parallelAim, straightAheadAim, type ToeLine } from '../tracer/aimSugges
 import { detectFeet, frameAtTime } from '../tracer/pose';
 import { defaultTracer, projectFlight } from '../tracer/project';
 import { manualTrace, shapePoints } from '../tracer/manualTrace';
-import type { TracerMarks } from '../tracer/paintTracer';
+import { TRACER_COLORS, tracerColorOf, type TracerMarks } from '../tracer/paintTracer';
 import { ballGuess, launchIsSet, previousStep, resetSetup, setupStep, showsPlacementReticle, type SetupPhase } from '../tracer/setup';
 import { clipEndTime, holdSpan, nextHold, playClock, tracerPlayhead } from '../tracer/timing';
 import type { Drawing, Pt, ShotData, ShotShape, SwingMeta, Tool, TracerCalibration } from '../types';
@@ -1593,6 +1593,22 @@ export function PlayerView({
               }}
             >
               Ball {tracerSpeedLabel(slowFactor)}
+            </button>
+          )}
+          {activeCal.impactTime != null && activeCal.showTracer !== false && (
+            <button
+              type="button"
+              className="speed-pill color-pill"
+              data-testid="tracer-color-pill"
+              aria-label="Tracer color"
+              onClick={() => {
+                const index = TRACER_COLORS.findIndex((option) => option.id === tracerColorOf(calRef.current.color));
+                const next = TRACER_COLORS[(index + 1) % TRACER_COLORS.length].id;
+                rememberTracer(shotRef.current, { ...calRef.current, color: next }, true);
+              }}
+            >
+              <span className="color-dot" style={{ background: tracerColorOf(activeCal.color) }} />
+              Color
             </button>
           )}
           <button

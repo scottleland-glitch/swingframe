@@ -1567,3 +1567,6 @@ textarea { resize: vertical; }
 .tracer-colors { display: flex; gap: 10px; justify-content: space-between; padding: 12px 2px 4px; }
 .tracer-color { width: 30px; height: 30px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25); padding: 0; flex: none; }
 .tracer-color[aria-pressed='true'] { border-color: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,0.6), 0 0 0 4px #fff; }
+
+.color-pill { display: inline-flex; align-items: center; gap: 6px; }
+.color-dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.6); display: inline-block; }
