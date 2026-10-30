@@ -943,7 +943,7 @@ export function PlayerView({
   const commitImpact = useCallback(
     (time: number) => {
       if (calRef.current.locked) return;
-      rememberTracer(shotRef.current, { ...calRef.current, impactTime: time }, true);
+      rememberTracer(shotRef.current, { ...calRef.current, impactTime: time, showTracer: true }, true);
       setTracerNote(null);
       setTracerEngaged(true);
       const phase = setupPhaseRef.current;
