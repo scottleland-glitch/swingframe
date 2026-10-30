@@ -1,3 +1,4 @@
+import { blobLooksBlack } from '../thumbs';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { ZOOM_MAX, ZOOM_MIN } from '../constants';
 import { paint } from '../draw';
@@ -121,10 +122,13 @@ export const VideoStage = forwardRef<
     tracerElapsed?: number | null;
     tracerMarks?: TracerMarks | null;
     tracerColor?: string | null;
+    /** Saved thumbnail, shown until the first video frame is drawn so the swing never opens on black. */
+    poster?: Blob | null;
   }
 >(function VideoStage(props, ref) {
   const {
     blob,
+    poster = null,
     drawings,
     tool,
     color,
@@ -945,6 +949,23 @@ export const VideoStage = forwardRef<
     }
     if (drag.kind === 'draw') finishDraw();
   }
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !poster || poster.size === 0) return;
+    let cancelled = false;
+    let url = '';
+    void blobLooksBlack(poster).then((black) => {
+      if (cancelled || black) return;
+      url = URL.createObjectURL(poster);
+      video.poster = url;
+    });
+    return () => {
+      cancelled = true;
+      video.removeAttribute('poster');
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [poster]);
 
   useEffect(() => {
     const video = videoRef.current;

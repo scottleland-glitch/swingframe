@@ -1,4 +1,4 @@
-import { canvasLooksBlack } from './thumbs';
+import { blobLooksBlack, canvasLooksBlack, canvasToThumbnail, grabGoodFrame } from './thumbs';
 import { loadInlineSource, markInline } from './inlineVideo';
 
 export interface ProbeResult {
@@ -118,7 +118,11 @@ export async function probeVideo(file: Blob): Promise<ProbeResult> {
         /* Use whatever frame is available. */
       }
     }
-    const thumbnail = await snapshot(video);
+    let thumbnail = await snapshot(video);
+    if (!thumbnail || (await blobLooksBlack(thumbnail))) {
+      const good = await grabGoodFrame(file, duration);
+      if (good) thumbnail = (await canvasToThumbnail(good)) ?? thumbnail;
+    }
     return { duration, width, height, thumbnail };
   } finally {
     video.pause();

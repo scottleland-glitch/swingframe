@@ -27,7 +27,7 @@ import { Icon, type IconName } from './Icons';
 import { Scrubber } from './Scrubber';
 import { TracerPanel, missingCritical } from './TracerPanel';
 import { VideoStage, type VideoEngine } from './VideoStage';
-import { blobLooksBlack, canvasLooksBlack, canvasToThumbnail } from '../thumbs';
+import { blobLooksBlack, canvasLooksBlack, canvasToThumbnail, grabGoodFrame } from '../thumbs';
 
 const HINTS: Record<Tool, string> = {
   select: 'Two fingers move, pinch, or turn a drawing. Drag a white handle with one finger to fine-tune.',
@@ -333,14 +333,16 @@ export function PlayerView({
         if (cancelled) return;
         tries += 1;
         const frame = stageRef.current?.captureFrame() ?? null;
-        if (frame && !canvasLooksBlack(frame)) {
-          const blob = await canvasToThumbnail(frame);
-          if (blob && blob.size > 0 && !cancelled) {
-            await updateSwing(id, { thumbnail: blob }).catch(() => undefined);
+        let good: HTMLCanvasElement | null = frame && !canvasLooksBlack(frame) ? frame : null;
+        if (!good && tries >= 2 && blob) good = await grabGoodFrame(blob, swing?.duration ?? 0);
+        if (good) {
+          const thumb = await canvasToThumbnail(good);
+          if (thumb && thumb.size > 0 && !cancelled) {
+            await updateSwing(id, { thumbnail: thumb }).catch(() => undefined);
             return;
           }
         }
-        if (tries < 40) timer = window.setTimeout(() => void attempt(), 500);
+        if (tries < 6) timer = window.setTimeout(() => void attempt(), 1500);
       };
       timer = window.setTimeout(() => void attempt(), 600);
     })();
@@ -1337,6 +1339,7 @@ export function PlayerView({
       <div className="stage-wrap player-stage">
         <VideoStage
           ref={stageRef}
+          poster={swing.thumbnail}
           blob={blob}
           drawings={drawings}
           tool={tool}
