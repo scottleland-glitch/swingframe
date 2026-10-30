@@ -105,9 +105,9 @@ function lineLabelLayout(
   h: number,
   ctx?: CanvasRenderingContext2D,
 ): { label: string; cx: number; cy: number; tw: number } | null {
-  const lean = lineLean(d.a, d.b, w, h, d.ref);
+  const lean = lineLean(d.a, d.b, w, h);
   if (!lean) return null;
-  const label = `${lean.deg.toFixed(1)}° ${lean.from === 'vertical' ? 'vert' : 'horiz'}`;
+  const label = `${lean.deg.toFixed(1)}° vert`;
   let m = ctx;
   if (!m) {
     measureCtx ??= document.createElement('canvas').getContext('2d');
@@ -128,16 +128,6 @@ function lineLabelLayout(
   cx = Math.min(w - tw / 2 - 8, Math.max(tw / 2 + 8, cx));
   cy = Math.min(h - 14, Math.max(14, cy));
   return { label, cx, cy, tw };
-}
-
-/** True when a point (normalized) lands on a line's angle readout. Tapping it flips vertical and horizontal. */
-export function hitLineLabel(d: Drawing, p: Pt, w: number, h: number): boolean {
-  if (d.type !== 'line') return false;
-  const box = lineLabelLayout(d, w, h);
-  if (!box) return false;
-  const px = p.x * w;
-  const py = p.y * h;
-  return Math.abs(px - box.cx) <= box.tw / 2 + 14 && Math.abs(py - box.cy) <= 20;
 }
 
 function paintLineLean(ctx: CanvasRenderingContext2D, d: Extract<Drawing, { type: 'line' }>, w: number, h: number) {

@@ -33,22 +33,13 @@ export function angleDegrees(a: Pt, v: Pt, b: Pt, w: number, h: number): number 
 }
 
 /**
- * How far a line leans off the plumb line, or off level. With no reference it picks
- * the closer one. Measured on screen. Returns degrees (0 to 90) and the reference.
+ * How far a line leans off the plumb line, measured on screen, in degrees (0 to 90).
  */
-export function lineLean(
-  a: Pt,
-  b: Pt,
-  w: number,
-  h: number,
-  ref?: 'vertical' | 'horizontal',
-): { deg: number; from: 'vertical' | 'horizontal' } | null {
+export function lineLean(a: Pt, b: Pt, w: number, h: number): { deg: number; from: 'vertical' } | null {
   const dx = Math.abs((b.x - a.x) * w);
   const dy = Math.abs((b.y - a.y) * h);
   if (Math.hypot(dx, dy) < 4) return null;
-  const offVertical = (Math.atan2(dx, dy) * 180) / Math.PI;
-  const from = ref ?? (offVertical <= 45 ? 'vertical' : 'horizontal');
-  return { deg: from === 'vertical' ? offVertical : 90 - offVertical, from };
+  return { deg: (Math.atan2(dx, dy) * 180) / Math.PI, from: 'vertical' };
 }
 
 /** Canvas arc from the first ray toward the second, using the minor sweep. */

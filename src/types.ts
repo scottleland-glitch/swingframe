@@ -110,7 +110,7 @@ export type Tool =
   | 'erase';
 
 export type Drawing =
-  | { id: string; type: 'line'; color: string; a: Pt; b: Pt; ref?: 'vertical' | 'horizontal' }
+  | { id: string; type: 'line'; color: string; a: Pt; b: Pt }
   | { id: string; type: 'pen'; color: string; points: Pt[] }
   | { id: string; type: 'angle'; color: string; a: Pt; v: Pt; b: Pt }
   | { id: string; type: 'circle'; color: string; c: Pt; r: number }

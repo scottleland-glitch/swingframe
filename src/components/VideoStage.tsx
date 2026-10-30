@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { ZOOM_MAX, ZOOM_MIN } from '../constants';
-import { hitLineLabel, paint } from '../draw';
+import { paint } from '../draw';
 import { pointAboveFinger } from '../tracer/aimPoint';
 import { paintTracer, type TracerMarks } from '../tracer/paintTracer';
 import { Icon } from './Icons';
@@ -17,7 +17,6 @@ import {
   clampPt,
   hitTest,
   lineFromFingers,
-  lineLean,
   pxDist,
   transformDrawing,
   translateDrawing,
@@ -1363,18 +1362,6 @@ export const VideoStage = forwardRef<
           const rect = canvasRect();
           const p = normFromClient(event.clientX, event.clientY);
           if (rect && p && onVideo(event.clientX, event.clientY, p)) {
-            const flipped = drawingsRef.current.find((drawing) => hitLineLabel(drawing, p, rect.width, rect.height));
-            if (flipped && flipped.type === 'line') {
-              pointers.current.delete(event.pointerId);
-              dragRef.current = null;
-              setCursor(null);
-              const now = lineLean(flipped.a, flipped.b, rect.width, rect.height, flipped.ref)?.from ?? 'vertical';
-              const next = now === 'vertical' ? 'horizontal' : 'vertical';
-              onCommitRef.current(
-                drawingsRef.current.map((drawing) => (drawing.id === flipped.id ? { ...flipped, ref: next } : drawing)),
-              );
-              return;
-            }
             const hit = hitTest(drawingsRef.current, p, rect.width, rect.height, null);
             if (hit) {
               pointers.current.delete(event.pointerId);
