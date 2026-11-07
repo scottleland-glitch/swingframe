@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emptyShot, sampleAt, simulateShot } from './flight';
-import { fitAimToMarks, marksAfterImpact, pathPointAt, warpToMarks } from './flightMarks';
+import { fitAimToMarks, fitMarks, marksAfterImpact, pathPointAt, warpToMarks } from './flightMarks';
 import { projectFlight, type TracerCamera } from './project';
 import type { Pt } from '../types';
 
@@ -104,5 +104,36 @@ describe('ball marks in flight', () => {
       const at = pathPointAt(again, mark.seconds);
       expect(Math.hypot((at.x - mark.point.x) * W, (at.y - mark.point.y) * H)).toBeLessThan(2);
     }
+  });
+
+  it('finds the clip speed from the marks, so a slow-motion clip set to 1x does not zigzag', () => {
+    const shot = flight(0, 0);
+    const side: Pt = { x: 0.8, y: 0.66 };
+    const real = projectFlight(shot.samples, camera, side, { x: 0.75, y: 0.3 }, W, H, ground);
+    const slow = 8;
+    const marks = [0.1, 0.25].map((elapsed) => {
+      const at = pathPointAt(real, elapsed / slow);
+      return { point: { x: at.x, y: at.y }, elapsed };
+    });
+    const fit = fitMarks({ samples: shot.samples, camera, ball: side, ground, width: W, height: H, marks, scale: 1 });
+    expect(fit).not.toBeNull();
+    expect(fit?.scale ?? 0).toBeGreaterThan(7);
+    expect(fit?.scale ?? 0).toBeLessThan(9);
+    const scale = fit?.scale ?? 1;
+    const path = projectFlight(shot.samples, camera, side, (fit as { target: Pt }).target, W, H, ground).map((p) => ({ ...p, t: p.t * scale }));
+    const warped = warpToMarks(path, marks.map((mark) => ({ point: mark.point, t: mark.elapsed })));
+    for (const mark of marks) {
+      const at = pathPointAt(warped, mark.elapsed);
+      expect(Math.hypot((at.x - mark.point.x) * W, (at.y - mark.point.y) * H)).toBeLessThan(0.5);
+    }
+    // Up once, then down once: no zigzag.
+    let turns = 0;
+    let prev = 0;
+    for (let i = 1; i < warped.length; i++) {
+      const dir = Math.sign(Math.round((warped[i].y - warped[i - 1].y) * H));
+      if (dir && prev && dir !== prev) turns++;
+      if (dir) prev = dir;
+    }
+    expect(turns).toBeLessThanOrEqual(1);
   });
 });

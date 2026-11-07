@@ -16,7 +16,7 @@ import { detectFeet, frameAtTime } from '../tracer/pose';
 import { defaultTracer, projectFlight, type TracerPoint } from '../tracer/project';
 import { manualTrace, shapePoints } from '../tracer/manualTrace';
 import { TRACER_COLORS, tracerColorOf, type TracerMarks } from '../tracer/paintTracer';
-import { fitAimToMarks, marksAfterImpact, pathPointAt, warpToMarks } from '../tracer/flightMarks';
+import { fitMarks, marksAfterImpact, pathPointAt, warpToMarks } from '../tracer/flightMarks';
 import {
   ballGuess,
   flightMarkIndex,
@@ -565,18 +565,23 @@ export function PlayerView({
       // Ball marks are seconds of video after impact. The flight model runs in real seconds.
       const marks = aimLine ? [] : marksAfterImpact(cal.flightMarks, cal.impactTime);
       let target: Pt | null = aimLine ? cal.target : null;
+      // The marks also show how fast the ball moves in this clip, so they set the pace, not the slow-motion setting.
+      let pace = slowFactor;
       if (!aimLine) {
-        target = marks.length
-          ? fitAimToMarks({
+        const fit = marks.length
+          ? fitMarks({
               samples: flight.samples,
               camera,
               ball: cal.ball,
               ground: cal.ground,
               width,
               height,
-              marks: marks.map((mark) => ({ point: mark.point, seconds: mark.elapsed / slowFactor })),
+              marks,
+              scale: slowFactor,
             })
           : null;
+        target = fit?.target ?? null;
+        if (fit) pace = fit.scale;
         // Before any mark, preview straight down the frame.
         target ??= straightAheadAim({
           ball: cal.ball,
@@ -589,7 +594,7 @@ export function PlayerView({
       // Flight time is real seconds. A slow-motion clip stretches the golfer, so the ball stretches with it.
       // An aim-line swing keeps the ball at its own pace at any playback speed. A marked swing follows the
       // video instead, so the line stays on the ball at every speed.
-      const scale = aimLine ? slowFactor * (playRate > 0 ? playRate : 1) : slowFactor;
+      const scale = aimLine ? slowFactor * (playRate > 0 ? playRate : 1) : pace;
       const timed = scale === 1 ? real : real.map((point) => ({ ...point, t: point.t * scale }));
       return marks.length ? warpToMarks(timed, marks.map((mark) => ({ point: mark.point, t: mark.elapsed }))) : timed;
     },
@@ -1849,7 +1854,7 @@ export function PlayerView({
           <button type="button" className="speed-pill" data-testid="speed-pill" aria-label="Playback speed" onClick={cycleRate}>
             {formatRate(rate)}
           </button>
-          {activeCal.impactTime != null && activeCal.showTracer !== false && (
+          {activeCal.impactTime != null && activeCal.showTracer !== false && (aimLine || !activeCal.flightMarks?.length) && (
             <button
               type="button"
               className="speed-pill"

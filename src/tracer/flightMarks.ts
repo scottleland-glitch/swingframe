@@ -27,9 +27,8 @@ function aimAt(ball: Pt, angle: number, width: number, height: number): Pt {
 }
 
 /**
- * The aim direction that puts the modeled flight closest to the marked ball.
- * Launch numbers still set the height and the bend. The marks only turn the line, so it leaves
- * along the ball's real start line instead of a guessed aim point. `seconds` is real flight time.
+ * The aim direction that puts the modeled flight closest to the marked ball, at a fixed clock.
+ * `seconds` is real flight time.
  */
 export function fitAimToMarks(input: {
   samples: FlightSample[];
@@ -40,14 +39,66 @@ export function fitAimToMarks(input: {
   height: number;
   marks: { point: Pt; seconds: number }[];
 }): Pt | null {
+  const fit = fitMarks({ ...input, marks: input.marks.map((mark) => ({ point: mark.point, elapsed: mark.seconds })), scale: 1, fixedScale: true });
+  return fit ? fit.target : null;
+}
+
+function golden(lo: number, hi: number, cost: (x: number) => number, steps: number): { x: number; cost: number } {
+  const g = (Math.sqrt(5) - 1) / 2;
+  let a = hi - g * (hi - lo);
+  let b = lo + g * (hi - lo);
+  let ca = cost(a);
+  let cb = cost(b);
+  for (let i = 0; i < steps; i++) {
+    if (ca <= cb) {
+      hi = b;
+      b = a;
+      cb = ca;
+      a = hi - g * (hi - lo);
+      ca = cost(a);
+    } else {
+      lo = a;
+      a = b;
+      ca = cb;
+      b = lo + g * (hi - lo);
+      cb = cost(b);
+    }
+  }
+  return ca <= cb ? { x: a, cost: ca } : { x: b, cost: cb };
+}
+
+/** Video seconds per real second the clip may run at: a little fast up to very slow motion. */
+const SCALE_MIN = 0.5;
+const SCALE_MAX = 40;
+
+/**
+ * The aim direction and the clip's speed that put the modeled flight on the marked ball.
+ * `elapsed` is seconds of video after impact. `scale` is the clip's slow-motion setting, the starting guess.
+ * The marks show both where the ball went and how fast it moved in this video, so a slow-motion clip
+ * set to 1x, or the other way round, no longer leaves the line ahead of or behind the ball.
+ * Launch numbers still set the height and the bend. The marks only turn the line and set its pace.
+ */
+export function fitMarks(input: {
+  samples: FlightSample[];
+  camera: TracerCamera;
+  ball: Pt;
+  ground: Pt | null | undefined;
+  width: number;
+  height: number;
+  marks: { point: Pt; elapsed: number }[];
+  scale: number;
+  fixedScale?: boolean;
+}): { target: Pt; scale: number } | null {
   const { samples, camera, ball, ground, width, height } = input;
-  const marks = input.marks.filter((mark) => mark.seconds > 0);
+  const marks = input.marks.filter((mark) => mark.elapsed > 0);
   if (samples.length < 2 || marks.length === 0 || width < 2 || height < 2) return null;
-  // Only the moments that were marked, plus the landing so the horizon solve sees the real carry.
-  const at = marks.map((mark) => sampleAt(samples, mark.seconds));
-  const sub: FlightSample[] = [samples[0], ...at, samples[samples.length - 1]];
-  const cost = (angle: number): number => {
-    const path = projectFlight(sub, camera, ball, aimAt(ball, angle, width, height), width, height, ground);
+  const last = samples[samples.length - 1];
+  const cost = (angle: number, scale: number): number => {
+    // Only the moments that were marked, plus the landing so the horizon solve sees the real carry.
+    const at = marks.map((mark) => sampleAt(samples, mark.elapsed / scale));
+    // A mark the model says comes after landing cannot be matched at this pace.
+    if (at.some((sample) => sample.t >= last.t - 1e-9)) return Infinity;
+    const path = projectFlight([samples[0], ...at, last], camera, ball, aimAt(ball, angle, width, height), width, height, ground);
     if (path.length < 2) return Infinity;
     let sum = 0;
     for (let i = 0; i < marks.length; i++) {
@@ -59,45 +110,54 @@ export function fitAimToMarks(input: {
     }
     return sum;
   };
-  const steps = 90;
-  const span = (Math.PI * 2) / steps;
-  let best = -Math.PI / 2;
-  let bestCost = Infinity;
-  for (let i = 0; i < steps; i++) {
-    const angle = -Math.PI + i * span;
-    const value = cost(angle);
-    if (value < bestCost) {
-      bestCost = value;
-      best = angle;
+  const span = (Math.PI * 2) / 90;
+  const bestAngle = (scale: number, around: number | null): { x: number; cost: number } => {
+    let best = around ?? -Math.PI / 2;
+    let bestCost = around == null ? Infinity : cost(around, scale);
+    if (around == null) {
+      for (let i = 0; i < 90; i++) {
+        const angle = -Math.PI + i * span;
+        const value = cost(angle, scale);
+        if (value < bestCost) {
+          bestCost = value;
+          best = angle;
+        }
+      }
+    }
+    if (!Number.isFinite(bestCost)) return { x: best, cost: bestCost };
+    const reach = around == null ? span : span * 4;
+    const refined = golden(best - reach, best + reach, (angle) => cost(angle, scale), 24);
+    return refined.cost <= bestCost ? refined : { x: best, cost: bestCost };
+  };
+  const start = Math.min(SCALE_MAX, Math.max(SCALE_MIN, input.scale > 0 ? input.scale : 1));
+  let scale = start;
+  let angle = bestAngle(scale, null);
+  if (!input.fixedScale) {
+    // The pace: every setting from a little fast to very slow, then refine. Most of the screen
+    // position comes from the pace, the side-to-side from the aim, so a couple of rounds settle both.
+    const logLo = Math.log(SCALE_MIN);
+    const logHi = Math.log(SCALE_MAX);
+    const paceCost = (log: number) => cost(angle.x, Math.exp(log));
+    for (let round = 0; round < 3; round++) {
+      let bestLog = Math.log(scale);
+      let bestCost = paceCost(bestLog);
+      const steps = 48;
+      const width = (logHi - logLo) / steps;
+      for (let i = 0; i <= steps; i++) {
+        const log = logLo + i * width;
+        const value = paceCost(log);
+        if (value < bestCost) {
+          bestCost = value;
+          bestLog = log;
+        }
+      }
+      const refined = golden(bestLog - width, bestLog + width, paceCost, 20);
+      scale = Math.exp(refined.cost <= bestCost ? refined.x : bestLog);
+      angle = bestAngle(scale, round === 0 ? null : angle.x);
     }
   }
-  if (!Number.isFinite(bestCost)) return null;
-  // Golden-section search inside the best slice and its neighbours.
-  let lo = best - span;
-  let hi = best + span;
-  const golden = (Math.sqrt(5) - 1) / 2;
-  let a = hi - golden * (hi - lo);
-  let b = lo + golden * (hi - lo);
-  let costA = cost(a);
-  let costB = cost(b);
-  for (let i = 0; i < 28; i++) {
-    if (costA <= costB) {
-      hi = b;
-      b = a;
-      costB = costA;
-      a = hi - golden * (hi - lo);
-      costA = cost(a);
-    } else {
-      lo = a;
-      a = b;
-      costA = costB;
-      b = lo + golden * (hi - lo);
-      costB = cost(b);
-    }
-  }
-  const refined = costA <= costB ? a : b;
-  const refinedCost = Math.min(costA, costB);
-  return aimAt(ball, refinedCost <= bestCost ? refined : best, width, height);
+  if (!Number.isFinite(angle.cost)) return null;
+  return { target: aimAt(ball, angle.x, width, height), scale };
 }
 
 /** Monotone cubic through the knots (Fritsch-Carlson), so a correction never overshoots between marks. */
