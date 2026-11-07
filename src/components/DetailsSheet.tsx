@@ -54,10 +54,6 @@ export function DetailsSheet({
         }}
       >
         <ViewPicker value={view} onChange={setView} />
-        <label className="field">
-          <span>Date</span>
-          <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-        </label>
         <div className="field">
           <span>Club</span>
           <div className="club-row">
@@ -69,6 +65,10 @@ export function DetailsSheet({
           </div>
           <input value={club} onChange={(event) => setClub(event.target.value)} maxLength={40} />
         </div>
+        <label className="field field-inline">
+          <span>Date</span>
+          <input type="date" className="date-compact" value={date} onChange={(event) => setDate(event.target.value)} />
+        </label>
         <label className="field">
           <span>Notes</span>
           <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} maxLength={500} />

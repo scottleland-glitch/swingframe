@@ -251,10 +251,6 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
               {reading ? ' · Reading… you can save now.' : ''}
             </p>
             <ViewPicker value={view} onChange={setView} />
-            <label className="field">
-              <span>Date</span>
-              <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-            </label>
             <div className="field">
               <span>Club</span>
               <div className="club-row">
@@ -278,6 +274,10 @@ export function AddSwingSheet({ onClose, onSaved }: { onClose: () => void; onSav
                 maxLength={40}
               />
             </div>
+            <label className="field field-inline">
+              <span>Date</span>
+              <input type="date" className="date-compact" value={date} onChange={(event) => setDate(event.target.value)} />
+            </label>
             <label className="field">
               <span>Notes</span>
               <textarea

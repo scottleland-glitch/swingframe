@@ -460,6 +460,28 @@ input, textarea {
   font-size: 16px;
 }
 textarea { resize: vertical; }
+/* Date sits on one short row. iOS draws a date input tall and full width otherwise. */
+.field.field-inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+input.date-compact {
+  width: auto;
+  min-width: 0;
+  max-width: 60%;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 12px;
+  line-height: 40px;
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: right;
+}
+input.date-compact::-webkit-date-and-time-value {
+  text-align: right;
+  margin: 0;
+}
 .preview {
   display: block;
   width: 100%;
