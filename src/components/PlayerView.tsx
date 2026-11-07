@@ -13,10 +13,21 @@ import { emptyShot, simulateShot } from '../tracer/flight';
 import { offerRecording, recordTracerVideo } from '../tracer/exportVideo';
 import { parallelAim, straightAheadAim, type ToeLine } from '../tracer/aimSuggest';
 import { detectFeet, frameAtTime } from '../tracer/pose';
-import { defaultTracer, projectFlight } from '../tracer/project';
+import { defaultTracer, projectFlight, type TracerPoint } from '../tracer/project';
 import { manualTrace, shapePoints } from '../tracer/manualTrace';
 import { TRACER_COLORS, tracerColorOf, type TracerMarks } from '../tracer/paintTracer';
-import { ballGuess, launchIsSet, previousStep, resetSetup, setupStep, showsPlacementReticle, type SetupPhase } from '../tracer/setup';
+import { fitAimToMarks, marksAfterImpact, pathPointAt, warpToMarks } from '../tracer/flightMarks';
+import {
+  ballGuess,
+  flightMarkIndex,
+  launchIsSet,
+  previousStep,
+  resetSetup,
+  setupStep,
+  showsPlacementReticle,
+  usesAimLine,
+  type SetupPhase,
+} from '../tracer/setup';
 import { clipEndTime, holdSpan, nextHold, playClock, tracerPlayhead } from '../tracer/timing';
 import type { Drawing, Pt, ShotData, ShotShape, SwingMeta, Tool, TracerCalibration } from '../types';
 import { useSwing } from '../useSwing';
@@ -51,7 +62,8 @@ function showAimMarks(cal: TracerCalibration): TracerMarks | null {
       manual: { start: cal.manualStart, apex: cal.manualApex, finish: cal.manualFinish },
     };
   }
-  return { ball: cal.ball, target: cal.target, ground: cal.ground ?? null };
+  const flight = usesAimLine(cal) ? null : (cal.flightMarks ?? []).map((mark) => ({ x: mark.x, y: mark.y }));
+  return { ball: cal.ball, target: usesAimLine(cal) ? cal.target : null, ground: cal.ground ?? null, flight };
 }
 
 const DRAW_TOOLS: { id: Tool; label: string; icon: IconName }[] = [
@@ -164,6 +176,10 @@ export function PlayerView({
   const [shot, setShot] = useState<ShotData | null>(null);
   const [tracerCal, setTracerCal] = useState<TracerCalibration | null>(null);
   const [impactBusy, setImpactBusy] = useState(false);
+  /** The impact time before the last Set impact time, so a mistaken tap can be undone. `phase` is the setup step it led to. */
+  const [impactUndo, setImpactUndo] = useState<{ prev: number | null; phase: SetupPhase | null } | null>(null);
+  const [flightHint, setFlightHint] = useState<string | null>(null);
+  const pathRef = useRef<TracerPoint[] | null>(null);
   const [tracerNote, setTracerNote] = useState<string | null>(null);
   const [exportNote, setExportNote] = useState<string | null>(null);
   const [immersive, setImmersive] = useState(false);
@@ -296,6 +312,21 @@ export function PlayerView({
         if (cal.ball) return cal.ball;
         return ballGuess(feetRef.current);
       }
+      const markIndex = flightMarkIndex(phase);
+      if (markIndex != null) {
+        // The reticle sits where the tracer says the ball is now, so it is usually one short drag from the ball.
+        const now = stageRef.current?.getTime() ?? 0;
+        const placed = cal.flightMarks?.[markIndex];
+        if (placed && Math.abs(placed.t - now) < 0.02) return { x: placed.x, y: placed.y };
+        const path = pathRef.current;
+        const elapsed = cal.impactTime != null ? now - cal.impactTime : 0;
+        if (path && path.length >= 2 && elapsed > 0) {
+          const at = pathPointAt(path, elapsed);
+          return { x: Math.min(0.98, Math.max(0.02, at.x)), y: Math.min(0.98, Math.max(0.02, at.y)) };
+        }
+        const from = cal.flightMarks?.[markIndex - 1] ?? cal.ball ?? ballGuess(feetRef.current);
+        return { x: from.x, y: Math.max(0.04, from.y - 0.12) };
+      }
       if (phase === 'apex' || phase === 'finish') {
         const origin = cal.manualStart ?? cal.ball ?? ballGuess(feetRef.current);
         const seeded = shapePoints(cal.shape ?? 'straight', origin);
@@ -312,7 +343,15 @@ export function PlayerView({
       draftTouched.current = false;
       setupPhaseRef.current = phase;
       setSetupPhase(phase);
-      const seed = seedFor(phase);
+      setFlightHint(null);
+      // Going back to a ball already marked in flight shows its frame again.
+      const markIndex = flightMarkIndex(phase);
+      const placed = markIndex != null ? calRef.current.flightMarks?.[markIndex] : null;
+      if (placed) {
+        stageRef.current?.pause();
+        stageRef.current?.seek(placed.t);
+      }
+      const seed = placed ? { x: placed.x, y: placed.y } : seedFor(phase);
       draftRef.current = seed;
       setDraftPoint(seed);
       setAimGuides(null);
@@ -438,6 +477,8 @@ export function PlayerView({
     setNumbersOpen(false);
     setShapesOpen(false);
     tracerUndo.current = null;
+    setImpactUndo(null);
+    setFlightHint(null);
     tracerUndoStamp.current = 0;
     drawingUndoStamp.current = 0;
     undoStamp.current = 0;
@@ -481,10 +522,18 @@ export function PlayerView({
     if (setupPhase === 'aim') return { ...activeCal, target: draftPoint };
     if (setupPhase === 'ball') return { ...activeCal, ball: draftPoint };
     if (setupPhase === 'horizon') return { ...activeCal, ground: draftPoint };
+    const markIndex = flightMarkIndex(setupPhase);
+    if (markIndex != null) {
+      // While a finger moves the reticle, the line refits through it at this frame.
+      if (!draftTouched.current) return activeCal;
+      const marks = (activeCal.flightMarks ?? []).slice(0, markIndex);
+      marks.push({ t: clock.time, x: draftPoint.x, y: draftPoint.y });
+      return { ...activeCal, flightMarks: marks };
+    }
     if (setupPhase === 'start') return { ...activeCal, mode: 'manual' as const, manualStart: draftPoint };
     if (setupPhase === 'apex') return { ...activeCal, mode: 'manual' as const, manualApex: draftPoint };
     return { ...activeCal, mode: 'manual' as const, manualFinish: draftPoint };
-  }, [activeCal, draftPoint, setupPhase]);
+  }, [activeCal, draftPoint, setupPhase, clock.time]);
 
   const slowFactor = useMemo(() => {
     const set = swing?.slowMo;
@@ -500,32 +549,67 @@ export function PlayerView({
         if (!cal.manualStart || !cal.manualApex || !cal.manualFinish) return null;
         return manualTrace(cal.manualStart, cal.manualApex, cal.manualFinish, cal.shape ?? 'straight');
       }
-      if (!swing?.view || !cal.ball || !cal.target) return null;
+      if (!swing?.view || !cal.ball) return null;
+      const aimLine = usesAimLine(cal);
+      if (aimLine && !cal.target) return null;
       const flight = simulateShot(activeShot);
       if (!flight) return null;
-      const real = projectFlight(
-        flight.samples,
-        {
-          view: swing.view,
-          height: cal.cameraHeight,
-          distance: cal.cameraDistance,
-          fov: cal.fov,
-        },
-        cal.ball,
-        cal.target,
-        swing.videoWidth || 9,
-        swing.videoHeight || 16,
-        cal.ground,
-      );
+      const camera = {
+        view: swing.view,
+        height: cal.cameraHeight,
+        distance: cal.cameraDistance,
+        fov: cal.fov,
+      };
+      const width = swing.videoWidth || 9;
+      const height = swing.videoHeight || 16;
+      // Ball marks are seconds of video after impact. The flight model runs in real seconds.
+      const marks = aimLine ? [] : marksAfterImpact(cal.flightMarks, cal.impactTime);
+      let target: Pt | null = aimLine ? cal.target : null;
+      if (!aimLine) {
+        target = marks.length
+          ? fitAimToMarks({
+              samples: flight.samples,
+              camera,
+              ball: cal.ball,
+              ground: cal.ground,
+              width,
+              height,
+              marks: marks.map((mark) => ({ point: mark.point, seconds: mark.elapsed / slowFactor })),
+            })
+          : null;
+        // Before any mark, preview straight down the frame.
+        target ??= straightAheadAim({
+          ball: cal.ball,
+          groundY: cal.ground?.y ?? null,
+          camera,
+          carryMeters: flight.carryYd * 0.9144,
+        });
+      }
+      const real = projectFlight(flight.samples, camera, cal.ball, target as Pt, width, height, cal.ground);
       // Flight time is real seconds. A slow-motion clip stretches the golfer, so the ball stretches with it.
-      // The ball keeps its own pace at any playback speed, so a faster video stretches the flight in clip time.
-      const scale = slowFactor * (playRate > 0 ? playRate : 1);
-      return scale === 1 ? real : real.map((point) => ({ ...point, t: point.t * scale }));
+      // An aim-line swing keeps the ball at its own pace at any playback speed. A marked swing follows the
+      // video instead, so the line stays on the ball at every speed.
+      const scale = aimLine ? slowFactor * (playRate > 0 ? playRate : 1) : slowFactor;
+      const timed = scale === 1 ? real : real.map((point) => ({ ...point, t: point.t * scale }));
+      return marks.length ? warpToMarks(timed, marks.map((mark) => ({ point: mark.point, t: mark.elapsed }))) : timed;
     },
     [swing?.view, swing?.videoWidth, swing?.videoHeight, activeShot, slowFactor, rate],
   );
 
   const tracerPath = useMemo(() => projectFor(activeCal), [projectFor, activeCal]);
+  pathRef.current = tracerPath;
+
+  // On a flight step the untouched reticle follows the line as the video moves, frame by frame.
+  const flightStep = flightMarkIndex(setupPhase) != null;
+  useEffect(() => {
+    if (!flightStep || draftTouched.current) return;
+    const phase = setupPhaseRef.current;
+    const seed = phase ? seedFor(phase) : null;
+    if (!seed) return;
+    draftRef.current = seed;
+    setDraftPoint(seed);
+    setFlightHint(null);
+  }, [flightStep, clock.time, tracerPath, seedFor]);
   const previewPath = useMemo(
     () => (placedCal === activeCal ? tracerPath : projectFor(placedCal)),
     [placedCal, activeCal, tracerPath, projectFor],
@@ -540,6 +624,8 @@ export function PlayerView({
     setupPhase === 'apex' ||
     setupPhase === 'finish' ||
     setupPhase === 'impact' ||
+    setupPhase === 'flight1' ||
+    setupPhase === 'flight2' ||
     setupPhase === 'lock' ||
     setupPhase === 'edit' ||
     numbersOpen ||
@@ -886,7 +972,7 @@ export function PlayerView({
         beginMarkerEdit();
         return;
       }
-      enterStep(redo ? 'aim' : setupStep(cal));
+      enterStep(redo ? 'ball' : setupStep(cal));
     },
     [beginMarkerEdit, clearTracerHold, enterStep],
   );
@@ -926,6 +1012,28 @@ export function PlayerView({
       if (phase === 'finish') {
         rememberTracer(shotRef.current, { ...cal, mode: 'manual', manualFinish: point }, true);
         enterStep('impact');
+        return;
+      }
+      const markIndex = flightMarkIndex(phase);
+      if (markIndex != null) {
+        const time = stageRef.current?.getTime() ?? 0;
+        const before = cal.flightMarks?.[markIndex - 1];
+        if (cal.impactTime == null || time <= cal.impactTime + 1e-3) {
+          setFlightHint('Scrub past impact first');
+          draftTouched.current = false;
+          return;
+        }
+        if (before && time <= before.t + 1e-3) {
+          setFlightHint('Scrub past the last mark');
+          draftTouched.current = false;
+          return;
+        }
+        // A new mark replaces this one and any after it, so the marks stay in order.
+        const marks = (cal.flightMarks ?? []).slice(0, markIndex);
+        marks.push({ t: time, x: point.x, y: point.y });
+        rememberTracer(shotRef.current, { ...cal, mode: 'data', flightMarks: marks }, true);
+        setImpactUndo(null);
+        enterStep(markIndex === 0 ? 'flight2' : 'lock');
       }
     },
     [enterStep, rememberTracer],
@@ -957,7 +1065,7 @@ export function PlayerView({
     const phase = setupPhaseRef.current;
     if (!phase) return;
     if (phase === 'start') rememberTracer(shotRef.current, { ...calRef.current, mode: 'data' }, true);
-    const next = previousStep(phase, calRef.current.mode);
+    const next = previousStep(phase, calRef.current.mode, usesAimLine(calRef.current));
     if (next) enterStep(next);
   }, [enterStep, rememberTracer]);
 
@@ -966,7 +1074,8 @@ export function PlayerView({
     aimEpoch.current += 1;
     setAimGuides(null);
     rememberTracer(shotRef.current, resetSetup(calRef.current), true);
-    enterStep('aim');
+    setImpactUndo(null);
+    enterStep('ball');
   }, [enterStep, rememberTracer]);
 
   const playTracer = useCallback(() => {
@@ -981,19 +1090,42 @@ export function PlayerView({
   const commitImpact = useCallback(
     (time: number) => {
       if (calRef.current.locked) return;
-      rememberTracer(shotRef.current, { ...calRef.current, impactTime: time, showTracer: true }, true);
+      const prev = calRef.current.impactTime;
+      const next = { ...calRef.current, impactTime: time, showTracer: true };
+      rememberTracer(shotRef.current, next, true);
       setTracerNote(null);
       setTracerEngaged(true);
       const phase = setupPhaseRef.current;
-      if (phase != null && phase !== 'edit') enterStep('lock');
+      if (phase != null && phase !== 'edit') {
+        const after = setupStep(next);
+        const step = after === 'edit' ? 'lock' : after;
+        enterStep(step);
+        setImpactUndo({ prev, phase: step });
+        return;
+      }
+      setImpactUndo({ prev, phase: null });
     },
     [enterStep, rememberTracer],
   );
+
+  /** Put back the impact time from before the last Set impact time. In setup, return to that step. */
+  const undoImpact = useCallback(() => {
+    const undo = impactUndo;
+    if (!undo || calRef.current.locked) return;
+    rememberTracer(shotRef.current, { ...calRef.current, impactTime: undo.prev }, true);
+    setImpactUndo(null);
+    if (undo.phase != null && setupPhaseRef.current != null) {
+      stageRef.current?.pause();
+      if (undo.prev != null) stageRef.current?.seek(undo.prev);
+      enterStep('impact');
+    }
+  }, [enterStep, impactUndo, rememberTracer]);
 
   const commitLock = useCallback(() => {
     const cal = calRef.current;
     const next = { ...cal, locked: true, setupDone: true };
     rememberTracer(shotRef.current, next, true);
+    setImpactUndo(null);
     const askNumbers = next.mode !== 'manual' && !launchIsSet(shotRef.current);
     leaveSetup();
     setTracerEngaged(true);
@@ -1067,6 +1199,7 @@ export function PlayerView({
     clearTracerHold();
     setTracerEngaged(false);
     setTracerNote(null);
+    setImpactUndo(null);
     void patch({ shot: null, tracer: null })
       .then(() => {
         undoStamp.current += 1;
@@ -1300,19 +1433,29 @@ export function PlayerView({
   };
 
   const setupKind =
-    setupPhase === 'ball' || setupPhase === 'start'
+    setupPhase === 'ball' || setupPhase === 'start' || setupPhase === 'flight1' || setupPhase === 'flight2'
       ? 'ball'
       : setupPhase === 'horizon' || setupPhase === 'finish'
         ? 'ground'
         : 'target';
   const placingPoint = setupPhase != null && showsPlacementReticle(setupPhase);
-  const playbackStep = setupPhase === 'impact' || setupPhase === 'lock';
+  const playbackStep = setupPhase === 'impact' || setupPhase === 'lock' || flightStep;
+  const aimLine = usesAimLine(activeCal);
+  const showSetupImpactUndo = impactUndo != null && impactUndo.phase != null && impactUndo.phase === setupPhase && activeCal.locked !== true;
+  const showBarImpactUndo = impactUndo != null && impactUndo.phase == null && setupPhase == null && activeCal.locked !== true;
   const numbersMissing = activeCal.mode !== 'manual' && activeCal.impactTime != null && !launchIsSet(activeShot);
-  const setupHint =
-    setupPhase === 'aim'
+  const setupHint = flightHint
+    ? flightHint
+    : setupPhase === 'aim'
       ? 'Set aim point'
       : setupPhase === 'ball'
-        ? 'Set ball position'
+        ? aimLine
+          ? 'Set ball position'
+          : 'Set ball position (1 of 3)'
+        : setupPhase === 'flight1'
+          ? 'Scrub ahead, drag onto ball (2 of 3)'
+          : setupPhase === 'flight2'
+            ? 'Scrub ahead, drag onto ball (3 of 3)'
         : setupPhase === 'horizon'
           ? 'Set horizon'
           : setupPhase === 'edit'
@@ -1438,7 +1581,7 @@ export function PlayerView({
               className="setup-nav-btn"
               aria-label="Back"
               data-testid="setup-back"
-              disabled={setupPhase === 'edit' || activeCal.locked === true || previousStep(setupPhase, activeCal.mode) == null}
+              disabled={setupPhase === 'edit' || activeCal.locked === true || previousStep(setupPhase, activeCal.mode, aimLine) == null}
               onClick={setupBack}
             >
               <Icon name="undo" />
@@ -1476,16 +1619,41 @@ export function PlayerView({
               data-testid="impact-transport"
               onPointerDown={(event) => event.stopPropagation()}
             >
-              {setupPhase === 'impact' ? (
-                <button type="button" className="setup-impact" data-testid="set-impact-setup" onClick={markImpact}>
-                  Set impact time
-                </button>
-              ) : (
-                <button type="button" className="setup-impact" data-testid="setup-lock" onClick={commitLock}>
-                  <Icon name="lock" />
-                  Lock
-                </button>
-              )}
+              <div className="setup-actions">
+                {showSetupImpactUndo && (
+                  <button
+                    type="button"
+                    className="setup-undo"
+                    aria-label="Undo impact time"
+                    data-testid="undo-impact-setup"
+                    onClick={undoImpact}
+                  >
+                    <Icon name="undo" />
+                  </button>
+                )}
+                {setupPhase === 'impact' ? (
+                  <button type="button" className="setup-impact" data-testid="set-impact-setup" onClick={markImpact}>
+                    Set impact time
+                  </button>
+                ) : flightStep ? (
+                  <button
+                    type="button"
+                    className="setup-impact"
+                    data-testid="mark-ball-flight"
+                    onClick={() => {
+                      const point = draftRef.current;
+                      if (point) confirmDraft(point);
+                    }}
+                  >
+                    Mark ball
+                  </button>
+                ) : (
+                  <button type="button" className="setup-impact" data-testid="setup-lock" onClick={commitLock}>
+                    <Icon name="lock" />
+                    Lock
+                  </button>
+                )}
+              </div>
               <div className="setup-transport">
                 <Scrubber className="slim" value={clock.time} max={clock.duration} onScrub={scrub} testId="impact-scrubber" />
                 <div className="setup-transport-row">
@@ -1658,10 +1826,23 @@ export function PlayerView({
 
       <div className="player-bar" ref={setBarNode}>
         {showImpactChip && activeCal.locked !== true && (
-          <button type="button" className="tracer-impact-chip" data-testid="set-impact-bar" onClick={markImpact}>
-            Set impact time
-            {activeCal.impactTime != null && <small>{formatTime(activeCal.impactTime)}</small>}
-          </button>
+          <div className="impact-row">
+            <button type="button" className="tracer-impact-chip" data-testid="set-impact-bar" onClick={markImpact}>
+              Set impact time
+              {activeCal.impactTime != null && <small>{formatTime(activeCal.impactTime)}</small>}
+            </button>
+            {showBarImpactUndo && (
+              <button
+                type="button"
+                className="impact-undo"
+                aria-label="Undo impact time"
+                data-testid="undo-impact-bar"
+                onClick={undoImpact}
+              >
+                <Icon name="undo" />
+              </button>
+            )}
+          </div>
         )}
         <Scrubber className="slim" value={clock.time} max={clock.duration} onScrub={scrub} testId="play-scrubber" />
         <div className="bar-meta">
@@ -2096,7 +2277,7 @@ export function PlayerView({
           <div className="sheet-body">
             <p className="tip">
               The video stays on this page. Tap the pencil for drawing tools. Place a drawing with two fingers. Undo is on the white bar, and Clear all is in the drawing menu.
-              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon walks through aim, ball, and horizon. Manual trace, at the bottom left, draws a flight through start, apex, and finish. Only the circle for the current step is on the picture. The undo arrow brings the previous circle back. On Set impact time and on Lock, a white bar at the bottom has the scrubber, frame step, and play, and those buttons sit above it. No setup circles are on the picture then. Lock opens launch numbers only when they are still empty. A manual trace never asks for numbers. After Lock, the frosted pill shows the points and an Edit button. Edit drags the markers and redraws the line. The check closes it and locks again if it was locked. Reset impact is only in that view, and none of it is in the export. Unlock with the pill, then the round arrow starts setup over. The 123 icon opens the numbers any time. Clear tracer removes the line. Undo puts it back.
+              Drag the time at the top, or the bar above the buttons, to scrub. Frame step is the arrows. The tracer icon walks through the ball, the horizon, and impact, then the ball twice more in the air: scrub ahead a few frames and drag the circle onto the ball, or tap Mark ball. The line then leaves along the ball's real start line and passes through each mark at its frame. Launch numbers still set the height and the bend. Right after Set impact time, the undo arrow beside the button puts back the previous impact time. Manual trace, at the bottom left, draws a flight through start, apex, and finish. Only the circle for the current step is on the picture. The undo arrow brings the previous circle back. On Set impact time and on Lock, a white bar at the bottom has the scrubber, frame step, and play, and those buttons sit above it. No setup circles are on the picture then. Lock opens launch numbers only when they are still empty. A manual trace never asks for numbers. After Lock, the frosted pill shows the points and an Edit button. Edit drags the markers and redraws the line. The check closes it and locks again if it was locked. Reset impact is only in that view, and none of it is in the export. Unlock with the pill, then the round arrow starts setup over. The 123 icon opens the numbers any time. Clear tracer removes the line. Undo puts it back.
             </p>
             {swing.notes ? <p className="note-block">{swing.notes}</p> : null}
             <div className="fps-row" role="group" aria-label="Frame step size">

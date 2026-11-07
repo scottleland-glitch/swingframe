@@ -376,6 +376,7 @@ export function defaultTracer(): TracerCalibration {
     ball: null,
     target: null,
     aimSuggested: false,
+    flightMarks: null,
     ground: null,
     impactTime: null,
     cameraHeight: 1.4,

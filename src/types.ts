@@ -56,11 +56,27 @@ export type TracerMode = 'data' | 'manual';
 /** Right-handed down-the-line: a draw bows right and finishes left of that bow. */
 export type ShotShape = 'draw' | 'straight' | 'fade';
 
+/** The ball marked in the air: where it is on screen at one moment of the video. */
+export interface FlightMark {
+  /** Seconds of the video. */
+  t: number;
+  x: number;
+  y: number;
+}
+
 /** Camera and timing used to draw the tracer on this swing. */
 export interface TracerCalibration {
   ball: Pt | null;
-  /** A point on the aim line, in video coordinates. Direction of the intended line only, not the landing. */
+  /**
+   * A point on the aim line, in video coordinates. Direction of the intended line only, not the landing.
+   * Only swings set up before ball marks use it. A swing with flight marks finds its line from the marks.
+   */
   target: Pt | null;
+  /**
+   * The ball marked in flight after impact, oldest first: the 2nd and 3rd ball positions.
+   * The tracer turns to start along these and passes through each one at its moment in the video.
+   */
+  flightMarks?: FlightMark[] | null;
   /**
    * True while Down the Line is still offering that aim point.
    * A check, a drag, or a tap accepts it. Older swings leave this off.

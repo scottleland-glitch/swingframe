@@ -9,6 +9,8 @@ export type SetupPhase =
   | 'apex'
   | 'finish'
   | 'impact'
+  | 'flight1'
+  | 'flight2'
   | 'lock'
   | 'edit';
 
@@ -25,6 +27,23 @@ function aimConfirmed(tracer: TracerCalibration): boolean {
 }
 
 /**
+ * True for a swing set up with an aim point, before the ball was marked in flight.
+ * Those keep the aim line and their old steps. Every new setup marks the ball instead.
+ */
+export function usesAimLine(tracer: TracerCalibration): boolean {
+  if (tracer.mode === 'manual') return false;
+  if (tracer.flightMarks && tracer.flightMarks.length > 0) return false;
+  return aimConfirmed(tracer);
+}
+
+/** Which flight mark a step places: 0 for the 2nd ball position, 1 for the 3rd. */
+export function flightMarkIndex(phase: SetupPhase | null): number | null {
+  if (phase === 'flight1') return 0;
+  if (phase === 'flight2') return 1;
+  return null;
+}
+
+/**
  * Where the tracer button should land. A finished setup opens the markers
  * for dragging. Anything missing resumes that step instead of starting over.
  * Lock is the last guided step, and only after this version has started that flow.
@@ -38,11 +57,20 @@ export function setupStep(tracer: TracerCalibration): SetupPhase {
     if (tracer.setupDone !== true) return 'lock';
     return 'edit';
   }
-  if (!aimConfirmed(tracer)) return 'aim';
+  if (usesAimLine(tracer)) {
+    if (!tracer.ball) return 'ball';
+    if (!tracer.ground) return 'horizon';
+    if (tracer.impactTime == null) return 'impact';
+    if (tracer.mode === 'data' && tracer.setupDone !== true) return 'lock';
+    return 'edit';
+  }
   if (!tracer.ball) return 'ball';
   if (!tracer.ground) return 'horizon';
   if (tracer.impactTime == null) return 'impact';
-  if (tracer.mode === 'data' && tracer.setupDone !== true) return 'lock';
+  const marks = tracer.flightMarks?.length ?? 0;
+  if (marks < 1) return 'flight1';
+  if (marks < 2) return 'flight2';
+  if (tracer.setupDone !== true) return 'lock';
   return 'edit';
 }
 
@@ -55,43 +83,53 @@ export function showsPlacementReticle(phase: SetupPhase): boolean {
     phase === 'aim' ||
     phase === 'ball' ||
     phase === 'horizon' ||
+    phase === 'flight1' ||
+    phase === 'flight2' ||
     phase === 'start' ||
     phase === 'apex' ||
     phase === 'finish'
   );
 }
 
-/** The step before this one. Aim is the start, so it has no previous step. */
-export function previousStep(phase: SetupPhase, mode: TracerCalibration['mode']): SetupPhase | null {
+/**
+ * The step before this one. Ball is the first step. A swing still on the aim line starts at aim instead.
+ * `aimLine` is usesAimLine for this swing.
+ */
+export function previousStep(phase: SetupPhase, mode: TracerCalibration['mode'], aimLine = false): SetupPhase | null {
   switch (phase) {
     case 'ball':
-      return 'aim';
+      return aimLine ? 'aim' : null;
     case 'horizon':
       return 'ball';
     case 'start':
-      return 'aim';
+      return 'ball';
     case 'apex':
       return 'start';
     case 'finish':
       return 'apex';
     case 'impact':
       return mode === 'manual' ? 'finish' : 'horizon';
-    case 'lock':
+    case 'flight1':
       return 'impact';
+    case 'flight2':
+      return 'flight1';
+    case 'lock':
+      return mode === 'manual' || aimLine ? 'impact' : 'flight2';
     case 'edit':
-      return mode === 'manual' ? 'finish' : 'horizon';
+      return mode === 'manual' ? 'finish' : aimLine ? 'horizon' : 'flight2';
     default:
       return null;
   }
 }
 
-/** Clears the placed tracer points so guided setup can begin again at aim. Launch numbers stay. */
+/** Clears the placed tracer points so guided setup can begin again at the ball. Launch numbers stay. */
 export function resetSetup(tracer: TracerCalibration): TracerCalibration {
   return {
     ...tracer,
     ball: null,
     target: null,
     aimSuggested: false,
+    flightMarks: null,
     ground: null,
     manualStart: null,
     manualApex: null,

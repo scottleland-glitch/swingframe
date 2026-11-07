@@ -1,13 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { emptyShot } from './flight';
 import { defaultTracer } from './project';
-import { ballGuess, launchIsSet, previousStep, resetSetup, setupStep, showsPlacementReticle } from './setup';
+import { ballGuess, flightMarkIndex, launchIsSet, previousStep, resetSetup, setupStep, showsPlacementReticle, usesAimLine } from './setup';
 
 describe('tracer setup', () => {
-  it('walks aim, then ball, then horizon, then impact, and edits a finished setup', () => {
+  it('walks ball, horizon, impact, then two balls in the air, then lock', () => {
     const base = defaultTracer();
-    expect(setupStep(base)).toBe('aim');
-    expect(setupStep({ ...base, target: { x: 0.5, y: 0.3 }, aimSuggested: true })).toBe('aim');
+    expect(setupStep(base)).toBe('ball');
+    expect(usesAimLine(base)).toBe(false);
+    // An aim point that was only suggested never makes it an aim-line swing.
+    expect(setupStep({ ...base, target: { x: 0.5, y: 0.3 }, aimSuggested: true })).toBe('ball');
+    const withBall = { ...base, ball: { x: 0.48, y: 0.74 } };
+    expect(setupStep(withBall)).toBe('horizon');
+    const withGround = { ...withBall, ground: { x: 0.5, y: 0.42 } };
+    expect(setupStep(withGround)).toBe('impact');
+    const hit = { ...withGround, impactTime: 1.2 };
+    expect(setupStep(hit)).toBe('flight1');
+    const once = { ...hit, flightMarks: [{ t: 1.4, x: 0.5, y: 0.6 }] };
+    expect(setupStep(once)).toBe('flight2');
+    const twice = { ...once, flightMarks: [...once.flightMarks, { t: 1.7, x: 0.51, y: 0.5 }] };
+    expect(setupStep(twice)).toBe('lock');
+    expect(setupStep({ ...twice, setupDone: true, locked: true })).toBe('edit');
+    expect(flightMarkIndex('flight1')).toBe(0);
+    expect(flightMarkIndex('flight2')).toBe(1);
+    expect(flightMarkIndex('lock')).toBeNull();
+  });
+
+  it('keeps an older aim-line swing on its old steps', () => {
+    const base = defaultTracer();
     const aimed = { ...base, target: { x: 0.5, y: 0.3 }, aimSuggested: false };
     expect(setupStep(aimed)).toBe('ball');
     const withBall = { ...aimed, ball: { x: 0.48, y: 0.74 } };
@@ -47,13 +67,18 @@ describe('tracer setup', () => {
   });
 
   it('steps back to the previous marker and can start over at aim', () => {
-    expect(previousStep('aim', 'data')).toBeNull();
-    expect(previousStep('ball', 'data')).toBe('aim');
+    expect(previousStep('aim', 'data', true)).toBeNull();
+    expect(previousStep('ball', 'data', true)).toBe('aim');
+    expect(previousStep('ball', 'data')).toBeNull();
     expect(previousStep('horizon', 'data')).toBe('ball');
     expect(previousStep('impact', 'data')).toBe('horizon');
-    expect(previousStep('lock', 'data')).toBe('impact');
-    expect(previousStep('edit', 'data')).toBe('horizon');
-    expect(previousStep('start', 'manual')).toBe('aim');
+    expect(previousStep('flight1', 'data')).toBe('impact');
+    expect(previousStep('flight2', 'data')).toBe('flight1');
+    expect(previousStep('lock', 'data')).toBe('flight2');
+    expect(previousStep('lock', 'data', true)).toBe('impact');
+    expect(previousStep('edit', 'data')).toBe('flight2');
+    expect(previousStep('edit', 'data', true)).toBe('horizon');
+    expect(previousStep('start', 'manual')).toBe('ball');
     expect(previousStep('apex', 'manual')).toBe('start');
     expect(previousStep('finish', 'manual')).toBe('apex');
     expect(previousStep('impact', 'manual')).toBe('finish');
@@ -69,9 +94,11 @@ describe('tracer setup', () => {
       manualApex: { x: 0.6, y: 0.3 },
       manualFinish: { x: 0.45, y: 0.5 },
       impactTime: 1.2,
+      flightMarks: [{ t: 1.4, x: 0.5, y: 0.6 }],
       setupDone: true,
       locked: true,
     });
+    expect(cleared.flightMarks).toBeNull();
     expect(cleared.ball).toBeNull();
     expect(cleared.target).toBeNull();
     expect(cleared.ground).toBeNull();
@@ -81,7 +108,7 @@ describe('tracer setup', () => {
     expect(cleared.impactTime).toBeNull();
     expect(cleared.mode).toBeUndefined();
     expect(cleared.locked).toBe(false);
-    expect(setupStep(cleared)).toBe('aim');
+    expect(setupStep(cleared)).toBe('ball');
   });
 
   it('shows only the circle for the step being placed', () => {
@@ -91,6 +118,8 @@ describe('tracer setup', () => {
     expect(showsPlacementReticle('start')).toBe(true);
     expect(showsPlacementReticle('apex')).toBe(true);
     expect(showsPlacementReticle('finish')).toBe(true);
+    expect(showsPlacementReticle('flight1')).toBe(true);
+    expect(showsPlacementReticle('flight2')).toBe(true);
     expect(showsPlacementReticle('impact')).toBe(false);
     expect(showsPlacementReticle('lock')).toBe(false);
     expect(showsPlacementReticle('edit')).toBe(false);

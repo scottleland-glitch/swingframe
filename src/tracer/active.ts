@@ -20,6 +20,7 @@ const SHOT_FIELDS: ShotField[] = [
 export function tracerIsSet(shot: ShotData | null | undefined, tracer: TracerCalibration | null | undefined): boolean {
   if (tracer?.ball || tracer?.target || tracer?.ground || tracer?.impactTime != null) return true;
   if (tracer?.manualStart || tracer?.manualApex || tracer?.manualFinish) return true;
+  if (tracer?.flightMarks && tracer.flightMarks.length > 0) return true;
   if (tracer) {
     const base = defaultTracer();
     if (tracer.cameraHeight !== base.cameraHeight || tracer.cameraDistance !== base.cameraDistance || tracer.fov !== base.fov) {

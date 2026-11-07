@@ -1,4 +1,4 @@
-import type { Drawing, DriveLink, Pt, ShotData, ShotField, ShotSource, SwingMeta, TracerCalibration, ViewAngle } from './types';
+import type { Drawing, DriveLink, FlightMark, Pt, ShotData, ShotField, ShotSource, SwingMeta, TracerCalibration, ViewAngle } from './types';
 import { UPLOAD_CHUNK_BYTES } from './driveConfig';
 
 export interface SwingBackupFile {
@@ -168,6 +168,17 @@ function sanitizePoint(value: unknown): Pt | null {
   return { x: Math.min(1, Math.max(0, rec.x)), y: Math.min(1, Math.max(0, rec.y)) };
 }
 
+function sanitizeMarks(value: unknown): FlightMark[] | null {
+  if (!Array.isArray(value)) return null;
+  const marks: FlightMark[] = [];
+  for (const item of value.slice(0, 8)) {
+    const point = sanitizePoint(item);
+    const t = item && typeof item === 'object' ? finiteNumber((item as { t?: unknown }).t) : null;
+    if (point && t != null) marks.push({ t, x: point.x, y: point.y });
+  }
+  return marks.length ? marks : null;
+}
+
 function sanitizeTracer(value: unknown): TracerCalibration | null {
   if (!value || typeof value !== 'object') return null;
   const rec = value as Record<string, unknown>;
@@ -179,6 +190,7 @@ function sanitizeTracer(value: unknown): TracerCalibration | null {
     ball: sanitizePoint(rec.ball),
     target: sanitizePoint(rec.target),
     aimSuggested: rec.aimSuggested === true,
+    flightMarks: sanitizeMarks(rec.flightMarks),
     ground: sanitizePoint(rec.ground),
     impactTime: finiteNumber(rec.impactTime),
     cameraHeight,

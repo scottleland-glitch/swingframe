@@ -830,6 +830,25 @@ textarea { resize: vertical; }
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.16) inset, 0 6px 16px rgba(0, 0, 0, 0.22);
 }
 .setup-playback .setup-impact .icon { color: #fff; }
+.setup-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.setup-undo {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.08);
+  color: #111;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.setup-undo .icon { width: 20px; height: 20px; }
 .setup-transport {
   align-self: stretch;
   background: #fff;
@@ -1270,6 +1289,29 @@ textarea { resize: vertical; }
   font-weight: 700;
   font-size: 15px;
 }
+.impact-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin: 8px 0 2px;
+}
+.impact-row .tracer-impact-chip {
+  flex: 1;
+  width: auto;
+  margin: 0;
+}
+.impact-undo {
+  flex: none;
+  width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.impact-undo .icon { width: 20px; height: 20px; }
 .tracer-impact-chip small {
   font-weight: 600;
   font-variant-numeric: tabular-nums;

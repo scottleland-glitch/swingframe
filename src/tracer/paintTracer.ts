@@ -5,6 +5,8 @@ export interface TracerMarks {
   ball: Pt | null;
   target: Pt | null;
   ground?: Pt | null;
+  /** The ball marked in flight, the 2nd and 3rd positions. Drawn with Show aim. */
+  flight?: Pt[] | null;
   /** Manual trace taps. Drawn with Show aim, not during setup. */
   manual?: { start: Pt; apex: Pt; finish: Pt } | null;
 }
@@ -177,6 +179,12 @@ export function paintTracer(
     ctx.arc(x, y, 3.5, 0, Math.PI * 2);
     ctx.stroke();
     label(marks.ground, 'Ground', '#b6f5c8');
+  }
+  if (marks.flight) {
+    marks.flight.forEach((point, index) => {
+      ring(point, '#ffe14a');
+      label(point, String(index + 2), '#ffe14a');
+    });
   }
   if (marks.manual) {
     ring(marks.manual.start, '#ffe14a');
