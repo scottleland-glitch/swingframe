@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emptyShot, sampleAt, simulateShot } from './flight';
-import { fitAimToMarks, fitMarks, marksAfterImpact, pathPointAt, warpToMarks } from './flightMarks';
+import { fitAimToMarks, fitMarks, marksAfterImpact, pathPointAt, retimeFlight, warpToMarks } from './flightMarks';
 import { projectFlight, type TracerCamera } from './project';
 import type { Pt } from '../types';
 
@@ -135,5 +135,20 @@ describe('ball marks in flight', () => {
       if (dir) prev = dir;
     }
     expect(turns).toBeLessThanOrEqual(1);
+  });
+
+  it('lands by the end of a slow-motion clip that ends mid-flight', () => {
+    const shot = flight(0, 0);
+    const real = projectFlight(shot.samples, camera, ball, { x: 0.5, y: 0.3 }, W, H, ground);
+    const hang = real[real.length - 1].t;
+    // 8x slow motion, 12 seconds of video left after impact: the real flight would need about 48.
+    const timed = retimeFlight(real, 8, 0.4, 12);
+    expect(timed[timed.length - 1].t).toBeCloseTo(12, 6);
+    // Up to the last mark it keeps the real pace, so the line stays on the marked ball.
+    expect(pathPointAt(timed, 0.4).y).toBeCloseTo(pathPointAt(real, 0.05).y, 6);
+    for (let i = 1; i < timed.length; i++) expect(timed[i].t).toBeGreaterThan(timed[i - 1].t);
+    // A clip long enough for the whole flight keeps the real pace all the way.
+    const roomy = retimeFlight(real, 1, 0.2, 30);
+    expect(roomy[roomy.length - 1].t).toBeCloseTo(hang, 6);
   });
 });

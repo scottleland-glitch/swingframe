@@ -16,7 +16,7 @@ import { detectFeet, frameAtTime } from '../tracer/pose';
 import { defaultTracer, projectFlight, type TracerPoint } from '../tracer/project';
 import { manualTrace, shapePoints } from '../tracer/manualTrace';
 import { TRACER_COLORS, tracerColorOf, type TracerMarks } from '../tracer/paintTracer';
-import { fitMarks, marksAfterImpact, pathPointAt, warpToMarks } from '../tracer/flightMarks';
+import { fitMarks, marksAfterImpact, pathPointAt, retimeFlight, warpToMarks } from '../tracer/flightMarks';
 import {
   ballGuess,
   flightMarkIndex,
@@ -595,10 +595,15 @@ export function PlayerView({
       // An aim-line swing keeps the ball at its own pace at any playback speed. A marked swing follows the
       // video instead, so the line stays on the ball at every speed.
       const scale = aimLine ? slowFactor * (playRate > 0 ? playRate : 1) : pace;
-      const timed = scale === 1 ? real : real.map((point) => ({ ...point, t: point.t * scale }));
-      return marks.length ? warpToMarks(timed, marks.map((mark) => ({ point: mark.point, t: mark.elapsed }))) : timed;
+      if (!marks.length || cal.impactTime == null) {
+        return scale === 1 ? real : real.map((point) => ({ ...point, t: point.t * scale }));
+      }
+      // The ball has to land by the end of the video, even when a slow-motion clip ends mid-flight.
+      const clipEnd = clipEndTime(swing.duration || clock.duration, swing.trimIn, swing.trimOut);
+      const timed = retimeFlight(real, scale, marks[marks.length - 1].elapsed, clipEnd - cal.impactTime);
+      return warpToMarks(timed, marks.map((mark) => ({ point: mark.point, t: mark.elapsed })));
     },
-    [swing?.view, swing?.videoWidth, swing?.videoHeight, activeShot, slowFactor, rate],
+    [swing?.view, swing?.videoWidth, swing?.videoHeight, swing?.duration, swing?.trimIn, swing?.trimOut, clock.duration, activeShot, slowFactor, rate],
   );
 
   const tracerPath = useMemo(() => projectFor(activeCal), [projectFor, activeCal]);

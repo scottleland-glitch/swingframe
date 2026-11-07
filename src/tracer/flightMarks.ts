@@ -245,3 +245,28 @@ export function warpToMarks(path: TracerPoint[], marks: { point: Pt; t: number }
   const fy = pchip(ts, knots.map((knot) => knot.dy));
   return dense.map((point) => ({ x: point.x + fx(point.t), y: point.y + fy(point.t), t: point.t }));
 }
+
+/**
+ * Put the flight on the video's clock. Up to the last mark it runs at `pace` (video seconds per real
+ * second), so the line stays on the marked ball. After that it keeps that pace when the ball can land
+ * before the clip ends. A slow-motion clip usually ends long before a real ball lands, so the rest of
+ * the flight then speeds up to land on the last frame. `available` is video seconds from impact to the
+ * end of the clip, `lastMark` video seconds from impact to the last mark. Times are seconds after impact.
+ */
+export function retimeFlight(path: TracerPoint[], pace: number, lastMark: number, available: number): TracerPoint[] {
+  if (path.length < 2 || !(pace > 0)) return path;
+  const flight = path[path.length - 1].t;
+  const markReal = Math.min(flight, Math.max(0, lastMark / pace));
+  const left = flight - markReal;
+  const room = available - markReal * pace;
+  let tail = pace;
+  // Land by the end of the clip, but only speed up, never slow down, and leave the marked part alone.
+  if (left > 1e-6 && Number.isFinite(available) && room > 1e-3 && left * pace > room) tail = room / left;
+  // A point exactly where the pace changes, so nothing between two samples blends the two clocks.
+  const split = tail !== pace && markReal > path[0].t && markReal < flight && !path.some((point) => Math.abs(point.t - markReal) < 1e-9);
+  const points = split ? [...path.filter((point) => point.t < markReal), pathPointAt(path, markReal), ...path.filter((point) => point.t > markReal)] : path;
+  return points.map((point) => ({
+    ...point,
+    t: point.t <= markReal ? point.t * pace : markReal * pace + (point.t - markReal) * tail,
+  }));
+}
